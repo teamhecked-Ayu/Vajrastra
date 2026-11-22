@@ -1,0 +1,2 @@
+# Procedural memory: each skill is <slug>.json (metadata) + <slug>.py (code).
+# Every skill is cleared by core.security_guard before it is written here.

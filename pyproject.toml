@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vajrastra"
+version = "0.1.0"
+description = "Universal cross-OS autonomous AI engineer, hyper-debugger and ML scientist."
+readme = "AGENTS.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "Vajrastra" }]
+keywords = ["autonomous-agent", "debugging", "cross-platform", "sqlite", "colab"]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: Android",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+# Zero third-party runtime dependencies: the core package is standard library only.
+dependencies = []
+
+[project.optional-dependencies]
+# Development tooling only; never imported by the shipped package.
+dev = []
+
+[project.scripts]
+vajrastra = "vajrastra:main"
+
+[tool.setuptools]
+py-modules = ["vajrastra"]
+
+[tool.setuptools.packages.find]
+include = ["core*"]
+namespaces = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"

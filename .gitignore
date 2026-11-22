@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+
+# Local episodic memory / generated artefacts (regenerate, never commit state)
+memory_bank/lessons.sqlite
+memory_bank/lessons.sqlite-*
+memory_bank/plans/
+memory_bank/bridge/outbox/
+memory_bank/research/
+memory_bank/evolution/
+memory_bank/sync/
