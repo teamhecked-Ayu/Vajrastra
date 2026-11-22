@@ -20,7 +20,8 @@ LOCK_VERSION = 1
 
 CRITICAL = "critical"
 HIGH = "high"
-MEDIUM = "medium"$LOW = "low"
+MEDIUM = "medium"
+LOW = "low"
 BLOCKING_SEVERITIES: FrozenSet[str] = frozenset({CRITICAL, HIGH})
 
 PROCESS = "process_execution"
