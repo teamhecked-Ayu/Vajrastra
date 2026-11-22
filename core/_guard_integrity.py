@@ -149,7 +149,7 @@ class GuardIntegrityMixin:
 
         target.parent.mkdir(parents=True, exist_ok=True)
         handle = tempfile.NamedTemporaryFile(
-            "w", encoding="utf-8", dir-target.parent, delete=False, suffix=".vajra"
+            "w", encoding="utf-8", dir=target.parent, delete=False, suffix=".vajra"
         )
         try:
             handle.write(source)
