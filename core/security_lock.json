@@ -1,0 +1,17 @@
+{
+  "algorithm": "sha256",
+  "bundle_sha256": "cfb975873a4cc831f475ac36bd1dad57886d8f8d9a36c6ec8da33db3ff92c9dc",
+  "files": {
+    "core/__init__.py": "bf3e5be14b6dcdeb7873e608ef73b0e937a91d23fa42d0cd10b896dd15325b45",
+    "core/memory_engine.py": "31cac16fcf2f881e70a81f5004d3dee582bbb681bfd326d891e220150b438694",
+    "core/os_adapter.py": "cb4e1a0b3bedfb95a3924ed39e4370e8375bbd6202b20f292e03ba2a5403ccae",
+    "core/security_guard.py": "6cb84055c9e78d6c6f434e52f2c683e6d1fc74b5ef9c6acb0da4268531a38c3d",
+    "vajrastra.py": "702a21a8c3be6bdf35ed2f744dcd336005de118058003824b640d5361c82c2ed"
+  },
+  "generated_by": "core.security_guard",
+  "immutable": [
+    "core/security_guard.py"
+  ],
+  "sealed_at": "2026-11-22T13:10:34Z",
+  "version": 1
+}
