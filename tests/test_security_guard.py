@@ -206,6 +206,16 @@ class IntegrityTests(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertIn("core/os_adapter.py", report.missing)
 
+    def test_unexpected_core_file_is_detected(self) -> None:
+        self.guard.seal()
+        extra = self.root / "core" / "new_module.py"
+        extra.write_text("# not in the sealed manifest\\n", encoding="utf-8")
+        report = self.guard.verify()
+        self.assertFalse(report.ok)
+        self.assertEqual(report.status, "drift")
+        self.assertIn("core/new_module.py", report.unexpected)
+        self.assertIn("unexpected=core/new_module.py", report.describe())
+
     def test_digest_helpers_agree(self) -> None:
         digest = sha256_file(self.root / "vajrastra.py")
         self.assertEqual(len(digest), 64)

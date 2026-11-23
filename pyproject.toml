@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "vajrastra"
 version = "0.3.0"
 description = "Universal cross-OS autonomous AI engineer, hyper-debugger and ML scientist."
-readme = "AGENTS.md"
+readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Proprietary" }
 authors = [{ name = "Vajrastra" }]
