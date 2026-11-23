@@ -43,7 +43,6 @@ Example (Linux/macOS shell):
 ```bash
 export GEMINI_API_KEY="your-key"
 export GITHUB_TOKEN="your-token"
-export VAJASTRA_GITHUB_REPO="owner/repository"
 python vajrastra.py --help
 ```
 
