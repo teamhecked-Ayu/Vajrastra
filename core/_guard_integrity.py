@@ -93,7 +93,7 @@ class GuardIntegrityMixin:
         expected = set(recorded)
         unexpected = [rel for rel in self.manifest_targets() if rel not in expected]
 
-        ok = not modified and not missing
+        ok = not modified and not missing and not unexpected
         return IntegrityReport(
             ok=ok,
             status="verified" if ok else "drift",
