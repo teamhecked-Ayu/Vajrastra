@@ -24,11 +24,11 @@ python vajrastra.py research "example topic" --seeds 3 --budget 1
 
 Running `python vajrastra.py` without arguments opens the interactive REPL.
 
-The installed console entry point is `vajrastra`. The direct Python command above avoids requiring package installation.
+The installed console entry point is `vajrastra`. The direct Python command above avoids requiring package installation. GitHub repository overrides are currently available through the relevant `--repo owner/name` CLI options; there is no repository-name environment variable yet.
 
 ## Configuration
 
-Set only the credentials and overrides needed for the operation. Never commit secrets.
+Set only the credentials and command-line overrides needed for the operation. Never commit secrets.
 
 | Variable | Purpose |
 | --- | --- |
