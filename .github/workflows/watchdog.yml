@@ -48,7 +48,7 @@ jobs:
           print(f"sealed: {report.sealed_at}")
           for path in report.unexpected:
               print(f"unexpected core file: {path}")
-          if report.status != "verified":
+          if report.status != "verified" or report.unexpected:
               print("integrity check failed: re-seal core/security_lock.json deliberately if this was intended")
               sys.exit(1)
           PY
