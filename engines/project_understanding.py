@@ -294,40 +294,41 @@ class ProjectIndex:
             },
             key=lambda path: (priority[Path(path).name], path),
         )
-        # Keep a small root-level build/config slice, not every nested example
-        # manifest or repository housekeeping file in a monorepo.
         for path in root_project_files[:4]:
             _add_unique(selected, path)
 
-        # Reserve slots for related tests and a small dependency slice.
-        source_limit = max(len(selected), max_files - 3)
+        # Prefer a small, high-scoring source set and reserve room for tests.
+        source_limit = min(max_files, len(selected) + 3)
         for path in sorted(scores, key=lambda item: (-scores[item], item)):
             if len(selected) >= source_limit:
                 break
             _add_unique(selected, path)
 
-        # Exact module-name matches or task terms select tests. Avoid substring
-        # matches such as "app" -> "test_appctx.py", which create noisy context.
+        # Generic words such as "tests" must not select every test file.
         selected_stems = {
             Path(path).stem.removeprefix("test_").lower() for path in selected
         }
+        test_terms = tokens - {"test", "tests"}
         for test_path in self.tests:
             stem = Path(test_path).stem.removeprefix("test_").lower()
-            path_terms = _terms(test_path.replace("/", " ").replace("_", " "))
-            if stem in selected_stems or bool(tokens & path_terms):
+            path_terms = _terms(test_path.replace("/", " ").replace("_", " ")) - {"test", "tests"}
+            if stem in selected_stems or bool(test_terms & path_terms):
                 if len(selected) >= max_files:
                     break
                 _add_unique(selected, test_path)
 
-        # Expand only the top two relevant Python modules. Broadly expanding
-        # every selected test and source module floods the bounded context.
-        dependency_sources = [path for path in selected if path in scores][:2]
+        # A bounded one-hop dependency sample adds project context without
+        # allowing import fan-out to dominate the task window.
+        dependency_sources = [path for path in selected if path in scores][:1]
+        dependency_count = 0
         for path in dependency_sources:
             for dependency in self.import_edges.get(path, []):
-                if len(selected) >= max_files:
+                if len(selected) >= max_files or dependency_count >= 2:
                     break
                 if dependency in self.python_files:
+                    before = len(selected)
                     _add_unique(selected, dependency)
+                    dependency_count += int(len(selected) > before)
 
         if not selected:
             selected.extend(self.entry_points[:2])
