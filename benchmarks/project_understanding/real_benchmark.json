@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "repositories": [
+    {
+      "name": "flask",
+      "url": "https://github.com/pallets/flask.git",
+      "ref": "22d924701a6ae2e4cd01e9a15bbaf3946094af65",
+      "task": "update Flask app dispatch behavior and basic tests",
+      "expected": [
+        "src/flask/app.py",
+        "tests/test_basic.py",
+        "pyproject.toml"
+      ]
+    },
+    {
+      "name": "requests",
+      "url": "https://github.com/psf/requests.git",
+      "ref": "6e83187b8feb273ed4c6cdab5efd8d54901dfab3",
+      "task": "change Requests session cookie persistence and requests tests",
+      "expected": [
+        "src/requests/sessions.py",
+        "tests/test_requests.py",
+        "pyproject.toml"
+      ]
+    },
+    {
+      "name": "httpx",
+      "url": "https://github.com/encode/httpx.git",
+      "ref": "7cff5f79bc78649bbcd3fd9aa7a74c86e0f63016",
+      "task": "change HTTPX responses text decoding and response tests",
+      "expected": [
+        "httpx/_models.py",
+        "tests/models/test_responses.py",
+        "pyproject.toml"
+      ]
+    }
+  ]
+}
