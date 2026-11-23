@@ -1,6 +1,6 @@
 {
   "algorithm": "sha256",
-  "bundle_sha256": "532a5a31e1f94ffb01851430b2e73d96d190ac5aed46149dd67f8738cfbc10e9",
+  "bundle_sha256": "bd4a850a8b4d448e03b54aa96987f5675e35ef9ba44ab1cf543d7ec98ff43f2e",
   "files": {
     "core/__init__.py": "bf3e5be14b6dcdeb7873e608ef73b0e937a91d23fa42d0cd10b896dd15325b45",
     "core/_guard_integrity.py": "15b85a549646c379907455646b324ccd5b4360d890a768e3f5c900680cbba2f6",
@@ -11,13 +11,13 @@
     "core/model_router.py": "b83418acd88c678e6e99cfdd4ae58e2ad2aab3c517259f4d4e57e408cc322778",
     "core/os_adapter.py": "cb4e1a0b3bedfb95a3924ed39e4370e8375bbd6202b20f292e03ba2a5403ccae",
     "core/security_guard.py": "315cc22a9a251348a710122188bcc733332d2636622cbb4b2b451d98d714cb74",
-    "core/session_manager.py": "846a4f2a59821b473bd2d9aa0e90acf2a85de0405aa36b56dfa5affa506f7c2a",
+    "core/session_manager.py": "bf279aa9816650dc74bf4946b3de3122640a82c261150a3cebd898c733695663",
     "vajrastra.py": "55b989d11c4d4d23d280cdc9f82e46c420ec13f1e4cfd1fca4b328f8de3478e8"
   },
   "generated_by": "core.security_guard",
   "immutable": [
     "core/security_guard.py"
   ],
-  "sealed_at": "2026-11-23T14:58:00Z",
+  "sealed_at": "2026-11-23T15:00:00Z",
   "version": 1
 }
