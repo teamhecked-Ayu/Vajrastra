@@ -282,21 +282,29 @@ class ProjectIndex:
                 scores[path] = score
 
         selected: List[str] = []
-        # Reserve context slots for project manifests/configuration before
-        # filling the budget with high-scoring source files. Otherwise a large
-        # repository can crowd pyproject.toml and equivalent build metadata out.
-        for path in self.manifests + self.configs:
+        priority = {
+            "pyproject.toml": 0, "setup.py": 1, "setup.cfg": 2,
+            "requirements.txt": 3, "requirements-dev.txt": 4,
+            "Pipfile": 5, "Cargo.toml": 6, "go.mod": 7,
+        }
+        root_project_files = sorted(
+            {path for path in self.manifests + self.configs if "/" not in path},
+            key=lambda path: (priority.get(Path(path).name, 99), path),
+        )
+        # Keep a small root-level build/config slice, not every nested example
+        # manifest in a monorepo.
+        for path in root_project_files[:4]:
             _add_unique(selected, path)
+
+        # Reserve slots for at least one related test and local dependency.
+        source_limit = max(len(selected), max_files - 2)
         for path in sorted(scores, key=lambda item: (-scores[item], item)):
-            if len(selected) >= max_files:
+            if len(selected) >= source_limit:
                 break
             _add_unique(selected, path)
-        # Include one-hop local dependencies of the most relevant modules.
-        for path in list(selected[:max_files]):
-            for dependency in self.import_edges.get(path, []):
-                if dependency in self.python_files:
-                    _add_unique(selected, dependency)
-        # Tests are selected by filename/path relation to selected modules.
+
+        # Select related tests before optional dependency expansion so a large
+        # import fan-out cannot crowd the regression tests out of the budget.
         selected_stems = {
             Path(path).stem.removeprefix("test_").lower() for path in selected
         }
@@ -308,11 +316,18 @@ class ProjectIndex:
                 or any(stem in item or item in stem for item in selected_stems)
                 or bool(tokens & path_terms)
             ):
+                if len(selected) >= max_files:
+                    break
                 _add_unique(selected, test_path)
 
-        # Core project files are always candidates for multi-file planning.
-        for path in self.manifests + self.configs:
-            _add_unique(selected, path)
+        # Include one-hop local dependencies only after core files and tests.
+        for path in list(selected):
+            for dependency in self.import_edges.get(path, []):
+                if len(selected) >= max_files:
+                    break
+                if dependency in self.python_files:
+                    _add_unique(selected, dependency)
+
         if not selected:
             selected.extend(self.entry_points[:2])
         selected = selected[:max_files]
