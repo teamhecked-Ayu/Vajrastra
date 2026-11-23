@@ -282,7 +282,14 @@ class ProjectIndex:
                 scores[path] = score
 
         selected: List[str] = []
+        # Reserve context slots for project manifests/configuration before
+        # filling the budget with high-scoring source files. Otherwise a large
+        # repository can crowd pyproject.toml and equivalent build metadata out.
+        for path in self.manifests + self.configs:
+            _add_unique(selected, path)
         for path in sorted(scores, key=lambda item: (-scores[item], item)):
+            if len(selected) >= max_files:
+                break
             _add_unique(selected, path)
         # Include one-hop local dependencies of the most relevant modules.
         for path in list(selected[:max_files]):
