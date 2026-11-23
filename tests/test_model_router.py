@@ -29,6 +29,7 @@ from core.model_router import (  # noqa: E402
     parse_json_object,
     resolve_api_key,
     route_tier,
+    token_usage_report,
 )
 
 KEY = "unit-test-key"
@@ -213,6 +214,25 @@ class QuotaTests(unittest.TestCase):
         with self.assertRaises(ModelRouterError) as caught:
             router.generate("hello")
         self.assertIn("GEMINI_API_KEY", str(caught.exception))
+
+
+class TokenUsageTests(unittest.TestCase):
+    def test_provider_counts_are_marked_measured(self):
+        report = token_usage_report(
+            "prompt text", "answer text",
+            {"promptTokenCount": 11, "candidatesTokenCount": 7, "totalTokenCount": 18},
+        )
+        self.assertEqual(report["input_tokens"], 11)
+        self.assertEqual(report["output_tokens"], 7)
+        self.assertEqual(report["total_tokens"], 18)
+        self.assertEqual(report["source"], "measured")
+
+    def test_missing_provider_counts_are_explicit_estimates(self):
+        report = token_usage_report("1234", "abcd", {})
+        self.assertEqual(report["input_tokens"], 1)
+        self.assertEqual(report["output_tokens"], 1)
+        self.assertEqual(report["total_tokens"], 2)
+        self.assertEqual(report["source"], "estimated")
 
 
 class JsonTests(unittest.TestCase):
