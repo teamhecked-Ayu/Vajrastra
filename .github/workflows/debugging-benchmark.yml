@@ -7,7 +7,11 @@ on:
       - "benchmarks/debugging/**"
       - "engines/hyper_debugger.py"
       - "engines/language_capabilities.py"
+      - "engines/debug_context.py"
       - "tests/test_language_capabilities.py"
+      - "tests/test_debug_context.py"
+      - "tests/test_debugger_regression_generation.py"
+      - "docs/DEBUGGING_BENCHMARK.md"
       - ".github/workflows/debugging-benchmark.yml"
   pull_request:
     branches: ["main"]
