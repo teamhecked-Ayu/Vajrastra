@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "integer-division-zero",
+      "source": "buggy/integer_division.py",
+      "baseline_test": "buggy/test_integer_division.py",
+      "fixed_source": "fixed/integer_division.py",
+      "fixed_test": "fixed/test_integer_division.py",
+      "expected_finding": "division by a literal zero"
+    },
+    {
+      "id": "mutable-default-state-leak",
+      "source": "buggy/mutable_default.py",
+      "baseline_test": "buggy/test_mutable_default.py",
+      "fixed_source": "fixed/mutable_default.py",
+      "fixed_test": "fixed/test_mutable_default.py",
+      "expected_finding": "mutable default argument"
+    },
+    {
+      "id": "swallowed-exception",
+      "source": "buggy/swallowed_exception.py",
+      "baseline_test": "buggy/test_swallowed_exception.py",
+      "fixed_source": "fixed/swallowed_exception.py",
+      "fixed_test": "fixed/test_swallowed_exception.py",
+      "expected_finding": "silently ignored"
+    }
+  ]
+}
