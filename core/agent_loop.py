@@ -181,14 +181,46 @@ class AgentLoop:
         )
 
     def _default_runner(self, prompt: str) -> Mapping[str, Any]:
+        self._last_usage = None
         if self._runner is not None:
-            return self._runner(prompt)
+            decision = self._runner(prompt)
+            from core.model_router import estimate_token_count
+            rendered = json.dumps(decision, sort_keys=True, ensure_ascii=False)
+            self._last_usage = {
+                "input_tokens": estimate_token_count(prompt),
+                "output_tokens": estimate_token_count(rendered),
+                "total_tokens": estimate_token_count(prompt) + estimate_token_count(rendered),
+                "input_source": "estimated",
+                "output_source": "estimated",
+                "total_source": "estimated",
+                "source": "estimated",
+            }
+            return decision
         if self.router is None or not self.router.available:
             raise AgentLoopError(
                 "no planner available: set GEMINI_API_KEY or pass runner= to AgentLoop"
             )
-        decision, _response = self.router.generate_json(prompt)
+        decision, response = self.router.generate_json(prompt)
+        self._last_usage = response.token_usage(prompt)
         return decision
+
+    def _record_model_usage(self, session: SessionState) -> None:
+        usage = getattr(self, "_last_usage", None)
+        if not isinstance(usage, Mapping):
+            return
+        totals = session.meta.setdefault(
+            "token_usage",
+            {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+             "measured_calls": 0, "estimated_calls": 0},
+        )
+        for key in ("input_tokens", "output_tokens", "total_tokens"):
+            totals[key] = int(totals.get(key, 0)) + int(usage.get(key, 0))
+        if usage.get("source") == "measured":
+            totals["measured_calls"] = int(totals.get("measured_calls", 0)) + 1
+        else:
+            totals["estimated_calls"] = int(totals.get("estimated_calls", 0)) + 1
+        totals["last_call"] = dict(usage)
+        self.sessions._persist(session)
 
     # ------------------------------------------------------------------ tools
     def _workspace_path(self, raw: str) -> Path:
@@ -328,6 +360,7 @@ class AgentLoop:
                         duration_s=time.monotonic() - started,
                     )
 
+                self._record_model_usage(session)
                 tool = str(decision.get("tool") or "").strip()
                 args = decision.get("args") or {}
                 reason = str(decision.get("reason") or "")
