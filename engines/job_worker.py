@@ -158,7 +158,20 @@ class JobWorker:
                 payload = json.loads(remote.text)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(payload, Mapping):
+                continue
             if str(payload.get("status") or "pending").lower() in {"done", "completed", "failed"}:
+                continue
+            # The outbox result is the durable idempotency marker. If a worker
+            # crashed after writing the result but before marking the inbox,
+            # never execute that job a second time.
+            job_id = str(payload.get("id") or Path(path).stem)
+            result_path = f"{self.outbox}/{job_id}.result.json"
+            try:
+                existing_result = client.get_file(result_path, self.branch)
+            except Exception as exc:
+                raise WorkerError(f"cannot check prior result {result_path}: {exc}") from exc
+            if existing_result is not None:
                 continue
             jobs.append(self._to_job(payload, path, getattr(remote, "sha", "")))
             if len(jobs) >= self.max_jobs:
