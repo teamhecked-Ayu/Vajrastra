@@ -1,0 +1,46 @@
+name: debugging-benchmark
+
+on:
+  push:
+    branches: ["feat/phase-3-debugging-code-generation"]
+    paths:
+      - "benchmarks/debugging/**"
+      - "engines/hyper_debugger.py"
+      - "engines/language_capabilities.py"
+      - "tests/test_language_capabilities.py"
+      - ".github/workflows/debugging-benchmark.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "benchmarks/debugging/**"
+      - "engines/hyper_debugger.py"
+      - "engines/language_capabilities.py"
+      - "tests/test_language_capabilities.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+      - name: Run reproducible debugging benchmark
+        run: python benchmarks/debugging/run_benchmark.py | tee debugging-benchmark.json
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: debugging-benchmark-python-${{ matrix.python-version }}
+          path: debugging-benchmark.json
