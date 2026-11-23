@@ -23,10 +23,13 @@ Run:
       --checkout pysnooper-1:buggy=/work/pysnooper-buggy \
       --checkout pysnooper-1:fixed=/work/pysnooper-fixed \
       --checkout black-1:buggy=/work/black-buggy \
-      --checkout black-1:fixed=/work/black-fixed
+      --checkout black-1:fixed=/work/black-fixed \
+      --python pysnooper-1=/venvs/pysnooper/bin/python \
+      --python black-1=/venvs/black/bin/python
 
-Use an interpreter matching the exact Python version for the case. The runner
-uses the current Python interpreter and does not create environments.
+Pass a separate interpreter for each case. Each interpreter must match the
+exact Python patch version in the manifest. The runner does not create
+environments or install dependencies.
 
 This is an upstream reproduction benchmark, not yet a model repair accuracy
 benchmark. The checked-in deterministic fixtures separately measure static
