@@ -1,19 +1,21 @@
 {
   "algorithm": "sha256",
-  "bundle_sha256": "5ecff2b1c5c803def6482e4c31a41b791b80bbfe1f464367416cd95192cc392a",
+  "bundle_sha256": "ce03108b79bb7c8a811f06a451929aa29e78983df512b33b2f39c5e74d524eed",
   "files": {
     "core/__init__.py": "bf3e5be14b6dcdeb7873e608ef73b0e937a91d23fa42d0cd10b896dd15325b45",
     "core/_guard_integrity.py": "f09d5e984ffb1c9a8044d89db74629217b174a799a453a69a06b03ee93616b47",
     "core/_guard_rules.py": "a705b2884146ca3ff157f4deb34d55a8ab5551aa357eb55c12da26c5446bc7e2",
+    "core/github_sync.py": "b5ca34f5aaf71ae64d2a274efcb16efac26665eae9c171649e11b6185810ce18",
     "core/memory_engine.py": "31cac16fcf2f881e70a81f5004d3dee582bbb681bfd326d891e220150b438694",
+    "core/model_router.py": "b83418acd88c678e6e99cfdd4ae58e2ad2aab3c517259f4d4e57e408cc322778",
     "core/os_adapter.py": "cb4e1a0b3bedfb95a3924ed39e4370e8375bbd6202b20f292e03ba2a5403ccae",
     "core/security_guard.py": "315cc22a9a251348a710122188bcc733332d2636622cbb4b2b451d98d714cb74",
-    "vajrastra.py": "0c6d3a94e076b70132e53b85d534c650af5d3a10dee99c5e58e3b2b90e984267"
+    "vajrastra.py": "eb92a8cc0f93a32b933fb54be758fda6b36921f17f8a6864ab63448670591dd4"
   },
   "generated_by": "core.security_guard",
   "immutable": [
     "core/security_guard.py"
   ],
-  "sealed_at": "2026-11-22T14:09:25Z",
+  "sealed_at": "2026-11-23T07:03:46Z",
   "version": 1
 }
