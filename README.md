@@ -34,7 +34,6 @@ Set only the credentials and command-line overrides needed for the operation. Ne
 | --- | --- |
 | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | Enables Gemini model routing. Colab Secrets are also checked when running in Colab. |
 | `GITHUB_TOKEN`, `VAJASTRA_GITHUB_TOKEN` or `GH_TOKEN` | Enables GitHub API operations. |
-| `VAJASTRA_GITHUB_REPO` | Overrides the default GitHub repository in the sync client. Use `owner/repository`. |
 | `VAJASTRA_EXECUTION_MODE` | Overrides execution routing with `local` or `cloud`. |
 | `VAJASTRA_ROOT` | Sets the workspace root used by the CLI. |
 
