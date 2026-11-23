@@ -71,6 +71,17 @@ class SessionRecoveryTests(unittest.TestCase):
         loaded_again = self.manager.load(state.session_id)
         self.assertEqual([turn.content for turn in loaded_again.turns], ["once"])
 
+    def test_legacy_snapshot_does_not_duplicate_existing_journal(self):
+        state = self.manager.create("legacy")
+        self.manager.append(state, "user", "already in snapshot")
+        snapshot = json.loads(self.manager._state_path(state.session_id).read_text(encoding="utf-8"))
+        snapshot["meta"] = {}
+        self.manager._state_path(state.session_id).write_text(
+            json.dumps(snapshot), encoding="utf-8"
+        )
+        loaded = self.manager.load(state.session_id)
+        self.assertEqual([turn.content for turn in loaded.turns], ["already in snapshot"])
+
 
 if __name__ == "__main__":
     unittest.main()
