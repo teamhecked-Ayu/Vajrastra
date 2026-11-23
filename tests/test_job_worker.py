@@ -35,6 +35,7 @@ class StubClient:
         self._token = token
         self.puts = []
         self.paths = []
+        self.existing_results = {}
 
     def token(self):
         return self._token
@@ -53,6 +54,8 @@ class StubClient:
 
     def get_file(self, path, ref=None):
         key = Path(path).stem
+        if path.startswith("workspace/outbox/"):
+            return self.existing_results.get(path)
         if key not in self.jobs:
             return None
         return StubRemote(json.dumps(self.jobs[key]))
@@ -113,6 +116,15 @@ class InboxTests(WorkerTestCase):
         client = StubClient({"legacy": {"id": "legacy", "kind": "memory", "action": "stats"}})
         jobs = self.worker(client).list_pending()
         self.assertEqual(jobs[0].payload["action"], "stats")
+
+    def test_existing_outbox_result_prevents_duplicate_delivery(self) -> None:
+        client = StubClient({
+            "job-1": {"id": "job-1", "kind": "memory", "payload": {"action": "stats"}}
+        })
+        client.existing_results["workspace/outbox/job-1.result.json"] = StubRemote(
+            json.dumps({"job_id": "job-1", "ok": True})
+        )
+        self.assertEqual(self.worker(client).list_pending(), [])
 
     def test_max_jobs_is_respected(self) -> None:
         client = StubClient(
@@ -225,6 +237,25 @@ class CheckpointTests(WorkerTestCase):
         self.assertTrue(outcomes[0].ok)
         self.assertFalse(outcomes[1].ok)
         self.assertEqual(len(client.puts), 4)  # result + inbox marker per job
+
+    def test_repeated_delivery_is_claimed_only_once(self) -> None:
+        client = StubClient({
+            "repeat": {"id": "repeat", "kind": "memory", "payload": {"action": "stats"}}
+        })
+        worker = self.worker(client)
+        first = worker.poll_once()
+        second = worker.poll_once()
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(second), 0)
+        self.assertEqual(len(client.puts), 2)
+
+    def test_stale_claim_requires_explicit_operator_reset(self) -> None:
+        worker = self.worker()
+        job = Job(job_id="stale", kind="memory", payload={"action": "stats"})
+        self.assertTrue(worker._claim_job(job))
+        self.assertFalse(worker._claim_job(job))
+        self.assertTrue(worker.reset_claim("stale"))
+        self.assertTrue(worker._claim_job(job))
 
     def test_run_once_iterates_a_single_poll(self) -> None:
         client = StubClient({"a": {"id": "a", "kind": "memory", "payload": {}}})

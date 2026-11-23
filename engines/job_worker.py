@@ -19,6 +19,7 @@ Jobs can never touch ``core/`` -- the same policy the rest of Vajrastra uses.
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field
@@ -120,6 +121,55 @@ class JobWorker:
         self.max_jobs = max(1, int(max_jobs))
         self.allow_apply = bool(allow_apply)
         self.sleeper = sleeper or time.sleep
+        self.claim_db = self.root / "memory_bank" / "worker_claims.sqlite3"
+        self.claim_db.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(self.claim_db), timeout=30.0) as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS job_claims ("
+                "job_id TEXT PRIMARY KEY, status TEXT NOT NULL, claimed_at TEXT NOT NULL, "
+                "completed_at TEXT, result_path TEXT)"
+            )
+
+    # ------------------------------------------------------------ idempotency
+    def _claim_job(self, job: Job) -> bool:
+        """Atomically claim a job once on this worker's shared filesystem.
+
+        A claim is intentionally not expired automatically: retrying a job
+        after an unknown crash point could repeat a destructive side effect.
+        An operator must inspect the outbox and explicitly reset a stale claim.
+        """
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        try:
+            with sqlite3.connect(str(self.claim_db), timeout=30.0) as connection:
+                cursor = connection.execute(
+                    "INSERT OR IGNORE INTO job_claims(job_id, status, claimed_at) "
+                    "VALUES (?, 'running', ?)",
+                    (job.job_id, now),
+                )
+                return cursor.rowcount == 1
+        except sqlite3.Error as exc:
+            raise WorkerError(f"cannot claim job {job.job_id}: {exc}") from exc
+
+    def _finish_claim(self, job: Job, outcome: JobOutcome) -> None:
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        result_path = f"{self.outbox}/{job.job_id}.result.json"
+        try:
+            with sqlite3.connect(str(self.claim_db), timeout=30.0) as connection:
+                connection.execute(
+                    "UPDATE job_claims SET status=?, completed_at=?, result_path=? WHERE job_id=?",
+                    ("done" if outcome.ok else "failed", now, result_path, job.job_id),
+                )
+        except sqlite3.Error as exc:
+            raise WorkerError(f"cannot finalize job claim {job.job_id}: {exc}") from exc
+
+    def reset_claim(self, job_id: str) -> bool:
+        """Explicitly release a stale claim after a human has checked its effects."""
+        try:
+            with sqlite3.connect(str(self.claim_db), timeout=30.0) as connection:
+                cursor = connection.execute("DELETE FROM job_claims WHERE job_id=?", (job_id,))
+                return cursor.rowcount > 0
+        except sqlite3.Error as exc:
+            raise WorkerError(f"cannot reset job claim {job_id}: {exc}") from exc
 
     # ------------------------------------------------------------------- inbox
     def _require_client(self) -> Any:
@@ -158,7 +208,20 @@ class JobWorker:
                 payload = json.loads(remote.text)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(payload, Mapping):
+                continue
             if str(payload.get("status") or "pending").lower() in {"done", "completed", "failed"}:
+                continue
+            # The outbox result is the durable idempotency marker. If a worker
+            # crashed after writing the result but before marking the inbox,
+            # never execute that job a second time.
+            job_id = str(payload.get("id") or Path(path).stem)
+            result_path = f"{self.outbox}/{job_id}.result.json"
+            try:
+                existing_result = client.get_file(result_path, self.branch)
+            except Exception as exc:
+                raise WorkerError(f"cannot check prior result {result_path}: {exc}") from exc
+            if existing_result is not None:
                 continue
             jobs.append(self._to_job(payload, path, getattr(remote, "sha", "")))
             if len(jobs) >= self.max_jobs:
@@ -370,10 +433,15 @@ class JobWorker:
         jobs = self.list_pending()
         outcomes: List[JobOutcome] = []
         for job in jobs:
+            if not self._claim_job(job):
+                continue
             outcome = self.execute(job)
             try:
                 self.checkpoint(job, outcome)
+                self._finish_claim(job, outcome)
             except WorkerError as exc:
+                # Keep the durable claim in "running" state. Re-executing after
+                # an uncertain checkpoint could repeat a destructive action.
                 outcome.error = (outcome.error + f"; checkpoint: {exc}").strip("; ")[:800]
             outcomes.append(outcome)
         return outcomes

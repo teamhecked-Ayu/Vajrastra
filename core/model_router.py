@@ -160,6 +160,52 @@ def cascade_for(model: str) -> List[str]:
         return list(MODEL_CHAIN[MODEL_CHAIN.index(model):])
     return [model, *MODEL_CHAIN]
 
+def estimate_token_count(text: str) -> int:
+    """Return a clearly-labelled rough estimate when provider counts are absent."""
+    value = str(text or "")
+    return (len(value.encode("utf-8")) + 3) // 4
+
+
+def token_usage_report(prompt: str, response_text: str,
+                       usage: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """Separate provider-measured counts from rough character-based estimates."""
+    metadata = usage if isinstance(usage, Mapping) else {}
+    measured_input = metadata.get("promptTokenCount")
+    measured_output = metadata.get("candidatesTokenCount")
+    measured_total = metadata.get("totalTokenCount")
+
+    def valid_count(value: Any) -> Optional[int]:
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            return None
+        return count if count >= 0 else None
+
+    input_count = valid_count(measured_input)
+    output_count = valid_count(measured_output)
+    total_count = valid_count(measured_total)
+    input_source = "measured" if input_count is not None else "estimated"
+    output_source = "measured" if output_count is not None else "estimated"
+    if input_count is None:
+        input_count = estimate_token_count(prompt)
+    if output_count is None:
+        output_count = estimate_token_count(response_text)
+    if total_count is None:
+        total_count = input_count + output_count
+        total_source = "estimated"
+    else:
+        total_source = "measured"
+    sources = {input_source, output_source, total_source}
+    return {
+        "input_tokens": input_count,
+        "output_tokens": output_count,
+        "total_tokens": total_count,
+        "input_source": input_source,
+        "output_source": output_source,
+        "total_source": total_source,
+        "source": next(iter(sources)) if len(sources) == 1 else "mixed",
+    }
+
 
 def describe_routing() -> Dict[str, Any]:
     """Human-readable routing table for the CLI."""
@@ -196,6 +242,10 @@ class ModelResponse:
             "finish_reason": self.finish_reason,
             "trace": [dict(entry) for entry in self.trace],
         }
+
+    def token_usage(self, prompt: str) -> Dict[str, Any]:
+        """Provider counts when present; otherwise explicit rough estimates."""
+        return token_usage_report(prompt, self.text, self.usage)
 
 
 def _urllib_transport(

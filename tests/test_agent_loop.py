@@ -231,6 +231,19 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(state.status, "resting")
         self.assertGreaterEqual(len(state.checkpoints), 1)
 
+    def test_injected_runner_usage_is_persisted_as_estimated(self) -> None:
+        loop = self.make_loop(
+            [{"tool": "finish", "args": {"summary": "usage tracked"}}]
+        )
+        run = loop.run("finish this task")
+        state = loop.sessions.load(run.session_id)
+        usage = state.meta["token_usage"]
+        self.assertGreater(usage["input_tokens"], 0)
+        self.assertGreater(usage["output_tokens"], 0)
+        self.assertEqual(usage["estimated_calls"], 1)
+        self.assertEqual(usage["measured_calls"], 0)
+        self.assertEqual(usage["last_call"]["source"], "estimated")
+
     def test_step_retry_counter_reported(self) -> None:
         loop = self.make_loop(
             [
