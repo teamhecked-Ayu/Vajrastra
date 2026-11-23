@@ -288,40 +288,41 @@ class ProjectIndex:
             "Pipfile": 5, "Cargo.toml": 6, "go.mod": 7,
         }
         root_project_files = sorted(
-            {path for path in self.manifests + self.configs if "/" not in path},
-            key=lambda path: (priority.get(Path(path).name, 99), path),
+            {
+                path for path in self.manifests + self.configs
+                if "/" not in path and Path(path).name in priority
+            },
+            key=lambda path: (priority[Path(path).name], path),
         )
         # Keep a small root-level build/config slice, not every nested example
-        # manifest in a monorepo.
+        # manifest or repository housekeeping file in a monorepo.
         for path in root_project_files[:4]:
             _add_unique(selected, path)
 
-        # Reserve slots for at least one related test and local dependency.
-        source_limit = max(len(selected), max_files - 2)
+        # Reserve slots for related tests and a small dependency slice.
+        source_limit = max(len(selected), max_files - 3)
         for path in sorted(scores, key=lambda item: (-scores[item], item)):
             if len(selected) >= source_limit:
                 break
             _add_unique(selected, path)
 
-        # Select related tests before optional dependency expansion so a large
-        # import fan-out cannot crowd the regression tests out of the budget.
+        # Exact module-name matches or task terms select tests. Avoid substring
+        # matches such as "app" -> "test_appctx.py", which create noisy context.
         selected_stems = {
             Path(path).stem.removeprefix("test_").lower() for path in selected
         }
         for test_path in self.tests:
             stem = Path(test_path).stem.removeprefix("test_").lower()
             path_terms = _terms(test_path.replace("/", " ").replace("_", " "))
-            if (
-                stem in selected_stems
-                or any(stem in item or item in stem for item in selected_stems)
-                or bool(tokens & path_terms)
-            ):
+            if stem in selected_stems or bool(tokens & path_terms):
                 if len(selected) >= max_files:
                     break
                 _add_unique(selected, test_path)
 
-        # Include one-hop local dependencies only after core files and tests.
-        for path in list(selected):
+        # Expand only the top two relevant Python modules. Broadly expanding
+        # every selected test and source module floods the bounded context.
+        dependency_sources = [path for path in selected if path in scores][:2]
+        for path in dependency_sources:
             for dependency in self.import_edges.get(path, []):
                 if len(selected) >= max_files:
                     break
