@@ -28,8 +28,21 @@ def main() -> int:
         "--checkout", action="append", default=[],
         help="case-id:buggy=/path or case-id:fixed=/path (repeat for every checkout)",
     )
+    parser.add_argument(
+        "--python", action="append", default=[],
+        help="case-id=/path/to/python interpreter (repeat for each case)",
+    )
     args = parser.parse_args()
     supplied = {}
+    interpreters = {}
+    for item in args.python:
+        try:
+            case_id, executable = item.split("=", 1)
+        except ValueError:
+            parser.error(f"invalid --python value: {item}")
+        if case_id in interpreters:
+            parser.error(f"duplicate interpreter for {case_id}")
+        interpreters[case_id] = Path(executable).resolve()
     for item in args.checkout:
         try:
             key, raw_path = item.split("=", 1)
@@ -47,6 +60,26 @@ def main() -> int:
     for case in manifest["cases"]:
         case_id = case["id"]
         case_result = {"id": case_id, "python_expected": case["python_version"]}
+        interpreter = interpreters.get(case_id)
+        if interpreter is None or not interpreter.is_file():
+            case_result["interpreter"] = {"status": "missing-interpreter"}
+            failed = True
+            results.append(case_result)
+            continue
+        version_probe = subprocess.run(
+            [str(interpreter), "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        actual_python = version_probe.stdout.strip()
+        case_result["python_actual"] = actual_python
+        if version_probe.returncode or actual_python != case["python_version"]:
+            case_result["interpreter"] = {
+                "status": "wrong-python", "expected": case["python_version"],
+                "actual": actual_python,
+            }
+            failed = True
+            results.append(case_result)
+            continue
         for revision in ("buggy", "fixed"):
             path = supplied.get((case_id, revision))
             if path is None:
@@ -61,19 +94,11 @@ def main() -> int:
                 }
                 failed = True
                 continue
-            if sys.version.split()[0] != case["python_version"]:
-                case_result[revision] = {
-                    "status": "wrong-python", "expected": case["python_version"],
-                    "actual": sys.version.split()[0],
-                }
-                failed = True
-                continue
             command = list(case["test_command"])
             if command[0] == "python":
-                command[0] = sys.executable
+                command[0] = str(interpreter)
             elif command[0] == "pytest":
-                pytest = Path(sys.executable).with_name("pytest")
-                command[0] = str(pytest) if pytest.exists() else "pytest"
+                command = [str(interpreter), "-m", "pytest", *command[1:]]
             run = subprocess.run(
                 command, cwd=str(path), capture_output=True, text=True,
                 timeout=180, stdin=subprocess.DEVNULL, check=False,
@@ -94,7 +119,7 @@ def main() -> int:
         "schema_version": 1,
         "benchmark": "bugsinpy-upstream-reproduction",
         "dataset": manifest["dataset"],
-        "python_runtime": sys.version.split()[0],
+        "python_interpreters": {key: str(value) for key, value in interpreters.items()},
         "results": results,
         "runtime_seconds": round(time.perf_counter() - started, 4),
     }
