@@ -238,6 +238,25 @@ class CheckpointTests(WorkerTestCase):
         self.assertFalse(outcomes[1].ok)
         self.assertEqual(len(client.puts), 4)  # result + inbox marker per job
 
+    def test_repeated_delivery_is_claimed_only_once(self) -> None:
+        client = StubClient({
+            "repeat": {"id": "repeat", "kind": "memory", "payload": {"action": "stats"}}
+        })
+        worker = self.worker(client)
+        first = worker.poll_once()
+        second = worker.poll_once()
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(second), 0)
+        self.assertEqual(len(client.puts), 2)
+
+    def test_stale_claim_requires_explicit_operator_reset(self) -> None:
+        worker = self.worker()
+        job = Job(job_id="stale", kind="memory", payload={"action": "stats"})
+        self.assertTrue(worker._claim_job(job))
+        self.assertFalse(worker._claim_job(job))
+        self.assertTrue(worker.reset_claim("stale"))
+        self.assertTrue(worker._claim_job(job))
+
     def test_run_once_iterates_a_single_poll(self) -> None:
         client = StubClient({"a": {"id": "a", "kind": "memory", "payload": {}}})
         outcomes = self.worker(client).run(iterations=1, interval=1.0)
