@@ -184,6 +184,16 @@ class SessionManager:
         complete = len(lines)
         if lines and not lines[-1].endswith((b"\n", b"\r")):
             complete -= 1  # a torn final append is not a committed record
+            # Remove the torn bytes before the next append, or later records
+            # would be concatenated onto an invalid JSON fragment.
+            durable_bytes = sum(len(line) for line in lines[:complete])
+            try:
+                with path.open("r+b") as handle:
+                    handle.truncate(durable_bytes)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except OSError as exc:
+                raise SessionError(f"cannot repair torn journal tail: {exc}") from exc
         try:
             already_applied = max(0, int(state.meta.get("_journal_entries", 0)))
         except (TypeError, ValueError):
