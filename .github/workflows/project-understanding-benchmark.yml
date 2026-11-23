@@ -1,0 +1,58 @@
+name: project-understanding-benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/phase-2-project-understanding
+    paths:
+      - ".github/workflows/project-understanding-benchmark.yml"
+      - "benchmarks/project_understanding/**"
+      - "engines/project_understanding.py"
+      - "engines/project_planner.py"
+
+permissions:
+  contents: read
+
+jobs:
+  retrieval:
+    name: retrieval benchmark (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - name: Check out Vajrastra
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Check out pinned benchmark repositories
+        run: |
+          git clone --quiet https://github.com/pallets/flask.git "$RUNNER_TEMP/flask"
+          git -C "$RUNNER_TEMP/flask" checkout --quiet 22d924701a6ae2e4cd01e9a15bbaf3946094af65
+          git clone --quiet https://github.com/psf/requests.git "$RUNNER_TEMP/requests"
+          git -C "$RUNNER_TEMP/requests" checkout --quiet 6e83187b8feb273ed4c6cdab5efd8d54901dfab3
+          git clone --quiet https://github.com/encode/httpx.git "$RUNNER_TEMP/httpx"
+          git -C "$RUNNER_TEMP/httpx" checkout --quiet 7cff5f79bc78649bbcd3fd9aa7a74c86e0f63016
+
+      - name: Run real repository retrieval benchmark
+        run: |
+          set -o pipefail
+          python benchmarks/project_understanding/run_real_benchmark.py \
+            --repo "flask=$RUNNER_TEMP/flask" \
+            --repo "requests=$RUNNER_TEMP/requests" \
+            --repo "httpx=$RUNNER_TEMP/httpx" | tee "$RUNNER_TEMP/project-understanding-results.jsonl"
+
+      - name: Upload benchmark output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-understanding-benchmark-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/project-understanding-results.jsonl
+          if-no-files-found: ignore
