@@ -23,6 +23,8 @@ CLEAN_ENV_KEYS = (
     "VAJRASTRA_GITHUB_TOKEN",
     "GITHUB_TOKEN",
     "GH_TOKEN",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
 )
 
 
@@ -130,6 +132,29 @@ class CommandTests(CliTestCase):
         code, _, err = self.run_cli(["build"])
         self.assertEqual(code, 2)
         self.assertTrue(err)
+
+    def test_build_plan_records_language(self) -> None:
+        code, out, _ = self.run_cli(
+            ["build", "add retry logic", "--lang", "javascript", "--plan"]
+        )
+        self.assertEqual(code, 0)
+        plans = list((self.root / "memory_bank" / "plans").glob("*.json"))
+        self.assertEqual(len(plans), 1)
+        payload = json.loads(plans[0].read_text(encoding="utf-8"))
+        self.assertEqual(payload["language"], "javascript")
+        self.assertIn("plan only", out)
+
+    def test_fix_repair_without_key_is_honest(self) -> None:
+        target = self.root / "buggy.py"
+        target.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+        code, out, _ = self.run_cli(["fix", str(target), "--repair"])
+        self.assertEqual(code, 1)
+        self.assertIn("GEMINI_API_KEY", out)
+
+    def test_sync_push_without_token_is_an_error(self) -> None:
+        code, _, err = self.run_cli(["sync", "--push"])
+        self.assertEqual(code, 2)
+        self.assertIn("GITHUB_TOKEN", err)
 
 
 class ReplTests(CliTestCase):
