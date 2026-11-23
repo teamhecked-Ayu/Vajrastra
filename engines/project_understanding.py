@@ -470,8 +470,12 @@ def _resolve_import_edges(records: Mapping[str, PythonFileRecord]) -> Dict[str, 
             elif module:
                 candidates.append(module)
             for alias in item.get("names", []):
-                if module and alias != "*":
+                if alias == "*":
+                    continue
+                if module:
                     candidates.append(".".join(part for part in (module, str(alias)) if part))
+                elif not level:
+                    candidates.append(str(alias))
             for candidate in candidates:
                 if candidate in modules and modules[candidate] != path:
                     found.add(modules[candidate])
