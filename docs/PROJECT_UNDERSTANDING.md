@@ -52,3 +52,30 @@ python -m unittest discover -s tests -v
 ```
 
 The tests use temporary repositories and do not execute indexed source files. Passing this test suite is not proof of correctness on every external repository; a broader benchmark set is still required before Phase 2 can pass its exit gate.
+
+## Planner integration
+
+The Python CodeArchitect build path now resolves the workspace Git HEAD, builds
+a fresh ProjectIndex, and materializes selected source, related test, and
+manifest/config excerpts into both the first Blue-Team prompt and later repair
+prompts. The adapter lives in engines/project_planner.py, not core/.
+
+The adapter re-checks Git HEAD after indexing, rejects stale commit context,
+rejects symlink path swaps, checks that selected Python source still matches
+its indexed SHA-256, and applies per-file and total prompt-context limits. If
+Git is unavailable or the workspace is not a Git checkout, the build continues
+without project context and records a note. This is a deliberate fallback, not
+a claim that context was attached.
+
+## External retrieval benchmark
+
+Three pinned real repositories are defined in
+benchmarks/project_understanding/real_benchmark.json: Flask 3.1.3, Requests
+2.34.2, and HTTPX at commit 7cff5f7. The offline runner verifies the checked-out
+revision and reports required-path recall and precision. See
+benchmarks/project_understanding/README.md for setup.
+
+The benchmark is reproducible, but it has not been executed in this CI run
+because CI does not clone external repositories. Do not claim the external
+benchmark passed until the runner has been executed against all three exact
+checkouts.
