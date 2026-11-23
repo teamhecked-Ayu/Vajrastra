@@ -6,12 +6,12 @@ and Windows using the Python standard library only.
 
 Commands::
 
-    vajrastra fix <target>
-    vajrastra build "<prompt>"
+    vajrastra fix <target> [--repair] [--apply]
+    vajrastra build "<prompt>" [--lang LANG]
     vajrastra research "<topic>"
     vajrastra evolve
     vajrastra memory <search|stats> [query]
-    vajrastra sync [--import PATH]
+    vajrastra sync [--push|--pull] [--import PATH]
 
 With no arguments it opens the interactive REPL with the ``vajrastra>`` prompt.
 """
@@ -48,13 +48,14 @@ from core.os_adapter import (  # noqa: E402
     TaskClass,
     parse_task_class,
 )
+from core.model_router import ModelRouter  # noqa: E402
 from core.security_guard import (  # noqa: E402
     IntegrityError,
     SecurityGuard,
     SecurityViolation,
 )
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 REPL_PROMPT = "vajrastra> "
 RULE_WIDTH = 72
 
@@ -198,30 +199,46 @@ def cmd_fix(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
     )
 
     if candidate.exists() and not looks_like_traceback:
-        files = _collect_python_files(ctx.root, candidate)
-        if not files:
-            _out(out, f"nothing to analyse: {candidate} contains no Python files")
-            return 0
-        findings = 0
-        blocking = 0
-        for path in files:
-            result = ctx.guard.scan_file(path)
-            findings += len(result.violations)
-            blocking += len(result.blocking)
-            rel = ctx.guard.relpath(path)
-            if result.syntax_error:
-                _out(out, f"  [syntax] {rel}: {result.syntax_error}")
-                blocking += 1
-                continue
-            for violation in result.violations:
-                _out(out, f"  {violation.describe()}  <- {rel}")
-        _out(out, _rule("scan"))
-        _out(out, f"files       : {len(files)}")
-        _out(out, f"findings    : {findings} (blocking: {blocking})")
+        from engines.hyper_debugger import HyperDebugger
 
-        if findings:
-            lessons = ctx.memory.search(_scan_query(ctx, files[:20]), limit=3)
-            _print_lessons(out, lessons)
+        debugger = HyperDebugger(
+            ctx.root, guard=ctx.guard, memory=ctx.memory, router=ModelRouter()
+        )
+        analysis = debugger.analyze(
+            candidate, use_llm=not bool(getattr(args, "no_llm", False))
+        )
+        _out(out, _rule("stages"))
+        _out(out, f"files       : {len(analysis.files)}")
+        _out(out, f"engines     : {analysis.engines.describe()}")
+        if analysis.languages:
+            _out(out, "languages   : " + ", ".join(
+                f"{name}({count})" for name, count in sorted(analysis.languages.items())
+            ))
+        if analysis.lesson_ids:
+            _out(out, "memories    : " + ", ".join(
+                f"#{ident}" for ident in analysis.lesson_ids
+            ))
+        for note in analysis.notes:
+            _out(out, f"note        : {note}")
+        for finding in analysis.findings:
+            _out(out, "  " + finding.render())
+        _out(out, _rule("scan"))
+        _out(out, f"findings    : {len(analysis.findings)} (blocking: {analysis.blocking_count})")
+        _out(out, "signature   : " + analysis.signature.splitlines()[0][:200])
+
+        patch = None
+        if bool(getattr(args, "repair", False)):
+            patch = debugger.repair(
+                candidate,
+                analysis,
+                apply=bool(getattr(args, "apply", False)),
+                test_command=getattr(args, "test", None),
+            )
+            _print_patch(out, patch)
+
+        blocking = analysis.blocking_count
+        if patch is not None and not patch.verified:
+            blocking = max(blocking, 1)
         return 1 if blocking else 0
 
     signature_text = raw_target
@@ -253,6 +270,27 @@ def cmd_fix(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
               "MemoryEngine('.').record_lesson('<signature>', root_cause='...', "
               "verified_patch='...', verified=True)\"")
     return 0
+
+
+def _print_patch(out, patch) -> None:
+    _out(out, _rule("verified patch"))
+    _out(out, f"target      : {patch.target}")
+    _out(out, f"verified    : {'yes' if patch.verified else 'no'}")
+    if patch.model:
+        _out(out, f"model       : {patch.model}")
+    if patch.lesson_id:
+        _out(out, f"lesson      : #{patch.lesson_id}")
+    if patch.root_cause:
+        _out(out, "root cause  : " + patch.root_cause[:600])
+    if patch.message:
+        _out(out, "status      : " + patch.message)
+    if patch.test_output:
+        _out(out, _rule("isolated test"))
+        for line in patch.test_output.splitlines()[-20:]:
+            _out(out, "  " + line)
+    if patch.diff:
+        _out(out, _rule("diff"))
+        _out(out, patch.diff.rstrip())
 
 
 def _print_lessons(out, lessons: Sequence[LessonRecord]) -> None:
@@ -334,8 +372,10 @@ def cmd_build(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
 
     task = classify_prompt(prompt)
     decision = ctx.adapter.route(task)
+    language = (getattr(args, "lang", None) or "python").strip().lower()
     _out(out, _rule("vajrastra build"))
     _out(out, f"prompt      : {prompt}")
+    _out(out, f"language    : {language}")
     _print_routing(out, decision)
 
     steps = _PLAN_TEMPLATES.get(task, _PLAN_TEMPLATES[TaskClass.BUILD])
@@ -344,13 +384,65 @@ def cmd_build(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
         _out(out, f"  {index}. {step}")
 
     slug = slugify(prompt)[:48]
+    router = ModelRouter()
+    plan_only = bool(getattr(args, "plan", False))
+    can_generate = (
+        not plan_only
+        and task not in HEAVY_TASKS
+        and decision.mode is ExecutionMode.LOCAL_NATIVE
+        and router.available
+    )
+
+    if plan_only:
+        _out(out, "engine      : plan only (--plan requested; no code generation)")
+
+    if can_generate:
+        from engines.code_architect import ArchitectError, CodeArchitect
+
+        architect = CodeArchitect(
+            ctx.root, router=router, guard=ctx.guard, memory=ctx.memory
+        )
+        try:
+            result = architect.build(
+                prompt,
+                language=language,
+                rounds=getattr(args, "rounds", None),
+                out=getattr(args, "out", None),
+            )
+        except ArchitectError as exc:
+            _out(sys.stderr, f"error: {exc}")
+            return 2
+        _out(out, _rule("adversarial build"))
+        _out(out, f"rounds      : {result.rounds}")
+        _out(out, f"verified    : {'yes' if result.verified else 'no'}")
+        _out(out, f"lesson      : #{result.lesson_id}")
+        if result.summary:
+            _out(out, f"summary     : {result.summary[:400]}")
+        for path in result.written:
+            _out(out, f"  wrote     : {path}")
+        for path in result.tests:
+            _out(out, f"  tests     : {path}")
+        if result.red_summary:
+            _out(out, f"red team    : {result.red_summary[:400]}")
+        for failure in result.failures:
+            _out(out, f"  failure   : {failure[:300]}")
+        for note in result.notes:
+            _out(out, f"  note      : {note[:300]}")
+        if result.workspace and result.verified:
+            _out(out, f"workspace   : {result.workspace}")
+        return 0 if result.verified else 1
+
     payload = {
         "prompt": prompt,
         "task_class": task.value,
+        "language": language,
         "routing": decision.as_dict(),
         "steps": steps,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+
+    if not router.available and not plan_only and task not in HEAVY_TASKS:
+        _out(out, "engine      : plan only (set GEMINI_API_KEY for adversarial code generation)")
 
     if decision.mode is ExecutionMode.CLOUD_BRIDGE:
         path = _write_json(
@@ -557,6 +649,38 @@ def cmd_sync(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
     _out(out, f"lessons     : {len(snapshot['lessons'])}")
     _out(out, f"skills      : {len(snapshot['skills'])}")
 
+    push = bool(getattr(args, "push", False))
+    pull = bool(getattr(args, "pull", False))
+    if push or pull:
+        from core.github_sync import GitHubClient, GitHubError
+
+        client = GitHubClient(
+            repo=getattr(args, "repo", None) or "teamhecked-Ayu/Vajrastra",
+            branch=getattr(args, "branch", None) or "main",
+        )
+        if not client.token():
+            _out(sys.stderr, "error: no GITHUB_TOKEN set; cannot reach GitHub")
+            return 2
+        _out(out, _rule("github"))
+        _out(out, f"repository  : {client.repo}@{client.branch}")
+        try:
+            report = client.sync_memory(
+                ctx.memory,
+                push=push,
+                pull=pull,
+                remote_path=getattr(args, "remote_path", None)
+                or "memory_bank/lessons.sqlite",
+            )
+        except GitHubError as exc:
+            _out(sys.stderr, f"error: {exc}")
+            return 2
+        _out(out, f"pulled      : {report.pulled_lessons} lesson(s), {report.pulled_skills} skill(s)")
+        _out(out, f"pushed      : {'yes' if report.pushed else 'no'} ({report.pushed_bytes} bytes)")
+        if report.commit_sha:
+            _out(out, f"commit      : {report.commit_sha[:12]}")
+        for note in report.notes:
+            _out(out, f"note        : {note}")
+
     device = ctx.adapter.profile.host_os.value
     _out(out, _rule("bridge"))
     if ctx.adapter.host_os.value == "android":
@@ -571,13 +695,13 @@ def cmd_sync(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
 # ------------------------------------------------------------------------ REPL
 _HELP_TEXT = """\
 commands:
-  fix <target>            analyse a file, tree or traceback and recall verified patches
-  build "<prompt>"        plan a task and route it local or to the Colab bridge
+  fix <target>            four-stage hyper-debugger: recall, static, symbolic, patch
+  build "<prompt>"        adversarial red/blue build of verified code
   research "<topic>"      mine local memory and write a research brief
   evolve                  integrity + firewall audit of the self-evolved surface
   memory stats            ledger and skill counters
   memory search <query>   keyword / signature lookup
-  sync [--import PATH]    export (or merge) a portable memory snapshot
+  sync [--push|--pull]    share lessons.sqlite with the other hosts via GitHub
   help                    this text
   exit                    leave the REPL
 """
@@ -654,9 +778,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     fix = subparsers.add_parser("fix", help="diagnose a file, tree or traceback")
     fix.add_argument("target", nargs="+", help="path, directory or error text")
+    fix.add_argument("--repair", action="store_true", help="ask the model for a verified patch")
+    fix.add_argument("--apply", action="store_true", help="write the patch once it verifies")
+    fix.add_argument("--test", default=None, help="isolated verification command")
+    fix.add_argument("--no-llm", action="store_true", help="skip the LLM adversarial review")
 
-    build = subparsers.add_parser("build", help="plan and route an engineering task")
+    build = subparsers.add_parser("build", help="build verified code with red/blue agents")
     build.add_argument("prompt", nargs="+", help="what to build")
+    build.add_argument("--lang", default="python", help="target language (default: python)")
+    build.add_argument("--rounds", type=int, default=None, help="red/blue rounds (default: 3)")
+    build.add_argument("--out", default=None, help="output directory for verified files")
+    build.add_argument("--plan", action="store_true", help="write a plan only, no generation")
 
     research = subparsers.add_parser("research", help="mine local memory for a topic")
     research.add_argument("topic", nargs="+", help="research topic")
@@ -671,6 +803,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync = subparsers.add_parser("sync", help="export or merge a memory snapshot")
     sync.add_argument("--import", dest="import_path", default=None, help="snapshot to merge in")
     sync.add_argument("--out", default=None, help="snapshot destination path")
+    sync.add_argument("--push", action="store_true", help="publish lessons.sqlite to GitHub")
+    sync.add_argument("--pull", action="store_true", help="merge the GitHub lessons.sqlite")
+    sync.add_argument("--repo", default=None, help="owner/name (default: teamhecked-Ayu/Vajrastra)")
+    sync.add_argument("--branch", default=None, help="branch to sync with (default: main)")
+    sync.add_argument("--remote-path", dest="remote_path", default=None,
+                       help="remote ledger path (default: memory_bank/lessons.sqlite)")
     return parser
 
 
