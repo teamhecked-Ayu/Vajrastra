@@ -194,6 +194,12 @@ class SessionManager:
                     os.fsync(handle.fileno())
             except OSError as exc:
                 raise SessionError(f"cannot repair torn journal tail: {exc}") from exc
+        if "_journal_entries" not in state.meta:
+            # Legacy snapshots predate journal sequence tracking. Their
+            # snapshots already contain the applied view, so mark the current
+            # journal as consumed rather than duplicating historical turns.
+            state.meta["_journal_entries"] = complete
+            return
         try:
             already_applied = max(0, int(state.meta.get("_journal_entries", 0)))
         except (TypeError, ValueError):
