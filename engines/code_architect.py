@@ -204,6 +204,9 @@ class CodeArchitect:
         language = (language or "python").strip().lower()
         total_rounds = max(1, int(rounds or self.rounds))
         self._prompt_text = text
+        self._project_context_text, project_context_note = self._prepare_project_context(
+            text, language
+        )
 
         draft = self._ask_json(
             self._blue_prompt(text, language, round_index=1), BLUE_SYSTEM
@@ -213,6 +216,8 @@ class CodeArchitect:
         red_summary = ""
         failures: List[str] = []
         notes: List[str] = []
+        if project_context_note:
+            notes.append(project_context_note)
         verified = False
         round_used = 0
 
@@ -312,6 +317,34 @@ class CodeArchitect:
                 last = exc
         raise ArchitectError(f"model did not return usable JSON: {last}")
 
+    def _prepare_project_context(self, prompt: str, language: str) -> Tuple[str, str]:
+        if language != "python":
+            return "", "project AST context is currently enabled for Python builds only"
+        try:
+            revision = subprocess.run(
+                ["git", "rev-parse", "--verify", "HEAD"],
+                cwd=str(self.root), capture_output=True, text=True, timeout=5, check=True,
+            ).stdout.strip()
+            if not revision:
+                return "", "project context skipped: workspace has no resolvable Git revision"
+            from engines.project_understanding import ProjectIndex
+            from engines.project_planner import render_project_context
+
+            index = ProjectIndex.build(self.root, revision)
+            rendered, context = render_project_context(index, prompt, current_commit_sha=revision)
+            current = subprocess.run(
+                ["git", "rev-parse", "--verify", "HEAD"],
+                cwd=str(self.root), capture_output=True, text=True, timeout=5, check=True,
+            ).stdout.strip()
+            if current != revision:
+                return "", "project context skipped: Git revision changed during indexing"
+            if not rendered:
+                return "", "project context index built but no source excerpts were selected"
+            selected = len(context.get("selected_files", []))
+            return rendered, f"project context attached: {selected} selected file(s) at {revision[:12]}"
+        except Exception as exc:
+            return "", f"project context unavailable; continuing without it ({type(exc).__name__}: {exc})"
+
     def _blue_prompt(self, prompt: str, language: str, *, round_index: int) -> str:
         return (
             f"Build this in {language}: {prompt}\n\n"
@@ -320,7 +353,8 @@ class CodeArchitect:
             "per module. Reply as JSON:\n"
             '{"summary": "...", "files": [{"path": "module.py", "content": "..."}], '
             '"tests": [{"path": "test_module.py", "content": "..."}]}\n'
-            f"Round {round_index}."
+            f"Round {round_index}.\n\n"
+            + getattr(self, "_project_context_text", "")
         )
 
     def _patch_prompt(
@@ -343,7 +377,8 @@ class CodeArchitect:
             '{"summary": "...", "files": [{"path": "...", "content": "..."}], '
             '"tests": [{"path": "...", "content": "..."}]}\n\n'
             + self._bundle_text(files, tests)
-            + f"\n\nThis is repair round {round_index + 1}."
+            + f"\n\nThis is repair round {round_index + 1}.\n\n"
+            + getattr(self, "_project_context_text", "")
         )
 
     def _red_prompt(
