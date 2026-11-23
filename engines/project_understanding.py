@@ -10,6 +10,7 @@ import ast
 import fnmatch
 import hashlib
 import json
+import os
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -343,7 +344,7 @@ class ProjectIndex:
 
 def _walk_files(root: Path, excludes: Sequence[str]) -> Iterable[Path]:
     excluded = tuple(excludes)
-    for current, dirs, files in __import__("os").walk(root, followlinks=False):
+    for current, dirs, files in os.walk(root, followlinks=False):
         dirs[:] = sorted(
             name for name in dirs
             if name not in excluded and not any(fnmatch.fnmatch(name, pattern) for pattern in excluded)
