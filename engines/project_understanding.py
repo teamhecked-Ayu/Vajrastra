@@ -274,10 +274,13 @@ class ProjectIndex:
                 str(item.get("module", "")) + " " + " ".join(item.get("names", []))
                 for item in record.imports
             ).lower()
-            haystack = f"{text} {symbols} {imported}"
-            score = sum(3 for token in tokens if token in text)
-            score += sum(2 for token in tokens if token in symbols)
-            score += sum(1 for token in tokens if token in imported)
+            path_terms = {_normalize_term(item) for item in _terms(text)}
+            symbol_terms = {_normalize_term(item) for item in _terms(symbols)}
+            import_terms = {_normalize_term(item) for item in _terms(imported)}
+            normalized_tokens = {_normalize_term(item) for item in tokens}
+            score = 3 * len(normalized_tokens & path_terms)
+            score += 2 * len(normalized_tokens & symbol_terms)
+            score += len(normalized_tokens & import_terms)
             if score:
                 scores[path] = score
 
@@ -510,6 +513,15 @@ def _resolve_import_edges(records: Mapping[str, PythonFileRecord]) -> Dict[str, 
                     found.add(modules[candidate])
         edges[path] = sorted(found)
     return edges
+
+
+def _normalize_term(token: str) -> str:
+    """Normalize common English plurals for path and symbol matching."""
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 4 and token.endswith("s"):
+        return token[:-1]
+    return token
 
 
 def _terms(value: str) -> Set[str]:
