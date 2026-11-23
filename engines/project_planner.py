@@ -63,14 +63,14 @@ def render_project_context(
                 raise ProjectIndexError(
                     "workspace changed after indexing; rebuild project index"
                 )
-        block = f"--- {rel} ---\\n{source.rstrip()}\\n"
+        block = f"--- {rel} ---\n{source.rstrip()}\n"
         if used + len(block) > max_chars:
             break
         chunks.append(block)
         used += len(block)
     rendered = (
         "VERIFIED PROJECT CONTEXT (read-only source excerpts; do not assume "
-        "unlisted behavior):\\n" + "\\n".join(chunks)
+        "unlisted behavior):\n" + "\n".join(chunks)
         if chunks else ""
     )
     return rendered, context
