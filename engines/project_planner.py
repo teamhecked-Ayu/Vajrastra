@@ -36,12 +36,18 @@ def render_project_context(
     chunks = []
     used = 0
     for rel in context["selected_files"]:
-        candidate = (root / str(rel)).resolve()
+        raw_candidate = root / str(rel)
+        cursor = root
+        for part in Path(str(rel)).parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                raise ProjectIndexError("selected path became a symlink after indexing")
+        candidate = raw_candidate.resolve()
         try:
             candidate.relative_to(root)
         except ValueError as exc:
             raise ProjectIndexError("selected path escapes indexed workspace") from exc
-        if candidate.is_symlink() or not candidate.is_file():
+        if not candidate.is_file():
             continue
         size = candidate.stat().st_size
         if size > MAX_SOURCE_FILE_BYTES:
