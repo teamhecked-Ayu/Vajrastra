@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "dataset": {
+    "name": "BugsInPy",
+    "repository": "https://github.com/reproducing-research-projects/BugsInPy",
+    "commit": "316b95e2353ecda832bad9b42f86fa7c2fcec8ac"
+  },
+  "cases": [
+    {
+      "id": "pysnooper-1",
+      "project_repository": "https://github.com/cool-RR/PySnooper",
+      "buggy_commit": "e21a31162f4c54be693d8ca8260e42393b39abd3",
+      "fixed_commit": "56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2",
+      "python_version": "3.8.1",
+      "test_command": ["pytest", "-q", "-s", "tests/test_chinese.py::test_chinese"],
+      "changed_files": ["pysnooper/pycompat.py", "pysnooper/tracer.py", "tests/utils.py"],
+      "dataset_metadata": "projects/PySnooper/bugs/1/bug.info",
+      "upstream_patch": "projects/PySnooper/bugs/1/bug_patch.txt"
+    },
+    {
+      "id": "black-1",
+      "project_repository": "https://github.com/psf/black",
+      "buggy_commit": "26c9465a22c732ab1e17b0dec578fa3432e9b558",
+      "fixed_commit": "c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7",
+      "python_version": "3.8.3",
+      "test_command": ["python", "-m", "unittest", "-q", "tests.test_black.BlackTestCase.test_works_in_mono_process_only_environment"],
+      "changed_files": ["black.py"],
+      "dataset_metadata": "projects/black/bugs/1/bug.info",
+      "upstream_patch": "projects/black/bugs/1/bug_patch.txt"
+    }
+  ]
+}
