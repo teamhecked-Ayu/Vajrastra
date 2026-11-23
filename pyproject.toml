@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vajrastra"
-version = "0.2.0"
+version = "0.3.0"
 description = "Universal cross-OS autonomous AI engineer, hyper-debugger and ML scientist."
 readme = "AGENTS.md"
 requires-python = ">=3.10"
 license = { text = "Proprietary" }
 authors = [{ name = "Vajrastra" }]
-keywords = ["autonomous-agent", "debugging", "cross-platform", "sqlite", "colab"]
+keywords = ["autonomous-agent", "debugging", "cross-platform", "sqlite", "colab", "mcts"]
 classifiers = [
     "Environment :: Console",
     "Operating System :: POSIX :: Linux",
@@ -38,6 +38,10 @@ py-modules = ["vajrastra"]
 [tool.setuptools.packages.find]
 include = ["core*", "engines*"]
 namespaces = false
+
+# The benchmark template ships as data; it is executed, never imported.
+[tool.setuptools.package-data]
+engines = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

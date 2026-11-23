@@ -1,0 +1,68 @@
+name: watchdog
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: watchdog-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Byte-compile the package
+        run: python -m compileall -q core engines templates vajrastra.py tests
+
+      - name: Verify the sealed core
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+
+          from core.security_guard import SecurityGuard
+
+          report = SecurityGuard(Path(".")).verify()
+          print(report.describe())
+          print(f"bundle: {report.bundle_sha256}")
+          print(f"sealed: {report.sealed_at}")
+          for path in report.unexpected:
+              print(f"unexpected core file: {path}")
+          if report.status != "verified":
+              print("integrity check failed: re-seal core/security_lock.json deliberately if this was intended")
+              sys.exit(1)
+          PY
+
+      - name: Run the unit test suite
+        run: python -m unittest discover -s tests -v
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+
+      - name: Smoke-run the CLI without optional engines
+        run: |
+          python vajrastra.py --help
+          python vajrastra.py --root "$RUNNER_TEMP/wd" memory stats
+          # the gate may legitimately return 1 (not significant); only crash here matters
+          python vajrastra.py --root "$RUNNER_TEMP/wd" research "watchdog smoke" --seeds 3 --budget 1 \
+            || echo "research gate returned non-zero (expected when the gate is not significant)"
+          python vajrastra.py --root "$RUNNER_TEMP/wd" worker --once || true

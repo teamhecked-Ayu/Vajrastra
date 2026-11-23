@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vajrastra -- universal cross-OS autonomous AI engineer (Phase 1 CLI).
+"""Vajrastra -- universal cross-OS autonomous AI engineer (Phase 3/4 CLI).
 
 Runs identically as ``python vajrastra.py`` on Android, Parrot OS, Linux, macOS
 and Windows using the Python standard library only.
@@ -8,8 +8,9 @@ Commands::
 
     vajrastra fix <target> [--repair] [--apply]
     vajrastra build "<prompt>" [--lang LANG]
-    vajrastra research "<topic>"
-    vajrastra evolve
+    vajrastra research "<topic>" [--seeds N] [--budget M]
+    vajrastra evolve [--push] [--no-tests]
+    vajrastra worker [--once] [--interval SECONDS]
     vajrastra memory <search|stats> [query]
     vajrastra sync [--push|--pull] [--import PATH]
 
@@ -55,7 +56,7 @@ from core.security_guard import (  # noqa: E402
     SecurityViolation,
 )
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 REPL_PROMPT = "vajrastra> "
 RULE_WIDTH = 72
 
@@ -517,10 +518,60 @@ def cmd_research(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     _out(out, _rule("brief"))
     _out(out, f"written     : {path.relative_to(ctx.root)}")
-    return 0
+
+    seeds = getattr(args, "seeds", None)
+    budget = getattr(args, "budget", None)
+    if seeds is None and budget is None:
+        _out(out, "next        : pass --seeds 3 --budget 10 to run the MCTS ML scientist")
+        return 0
+
+    from engines.ml_scientist import MLScientist
+
+    scientist = MLScientist(
+        ctx.root,
+        router=ModelRouter(),
+        guard=ctx.guard,
+        memory=ctx.memory,
+        seeds=3 if seeds is None else int(seeds),
+        budget=10 if budget is None else int(budget),
+    )
+    run = scientist.run(topic)
+    _out(out, _rule("mcts search"))
+    _out(out, f"run         : {run.run_id}")
+    _out(out, f"seeds       : {run.seeds} {scientist.seed_list}")
+    _out(out, f"budget      : {run.budget} (evaluated {len([n for n in run.nodes if n.experiment])})")
+    _out(out, f"baseline    : {run.baseline.mean if run.baseline.mean is not None else 'n/a'}")
+    if run.best is not None:
+        _out(out, f"best node   : {run.best.node_id} {json.dumps(run.best.params, sort_keys=True)}")
+        _out(out, f"best mean   : {run.best.experiment.mean if run.best.experiment else 'n/a'}")
+    _out(out, _rule("statistical gate"))
+    _out(out, f"status      : {run.gate.status}")
+    _out(out, f"reason      : {run.gate.reason}")
+    if run.gate.p_value is not None:
+        _out(out, f"p-value     : {run.gate.p_value:.6g} (alpha {run.gate.alpha}, {run.gate.method})")
+    _out(out, f"wins/losses : {run.gate.wins}/{run.gate.losses} across {run.gate.n_seeds} seed(s)")
+    _out(out, _rule("artifacts"))
+    _out(out, f"tree        : {run.tree_path.relative_to(ctx.root)}")
+    _out(out, f"results     : {run.metrics_json_path.relative_to(ctx.root)}")
+    _out(out, f"macros      : {run.metrics_tex_path.relative_to(ctx.root)} (rendered from raw JSON)")
+    _out(out, _rule("peer review"))
+    for review in run.reviews:
+        if review.skipped:
+            _out(out, f"  {review.persona:<20} skipped ({review.error})")
+            continue
+        _out(out, f"  {review.persona:<20} score {review.score if review.score is not None else 'n/a'} -> {review.verdict[:160]}")
+        for concern in review.concerns:
+            _out(out, f"    concern   : {concern[:200]}")
+        for experiment in review.required_experiments:
+            _out(out, f"    required  : {experiment[:200]}")
+    for note in run.notes:
+        _out(out, f"note        : {note}")
+    return 0 if run.verified else 1
 
 
 def cmd_evolve(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
+    from engines.self_evolver import SelfEvolver
+
     _out(out, _rule("vajrastra evolve"))
     report = ctx.guard.verify()
     _out(out, f"integrity   : {report.status}")
@@ -535,7 +586,8 @@ def cmd_evolve(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
 
     skills = ctx.memory.skills.list_skills()
     failed: List[str] = []
-    _out(out, _rule("procedural skills"))
+    if skills:
+        _out(out, _rule("procedural skills"))
     for skill in skills:
         if not skill.path:
             continue
@@ -545,45 +597,60 @@ def cmd_evolve(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
             failed.append(skill.slug)
         _out(out, f"  {skill.slug:<32} {status}")
 
-    unresolved = ctx.memory.unresolved(limit=5)
-    _out(out, _rule("evolution backlog"))
-    if unresolved:
-        for lesson in unresolved:
-            _out(out, f"  - #{lesson.id}: {lesson.error_signature.splitlines()[0][:120]}")
+    push = bool(getattr(args, "push", False))
+    client = None
+    if push:
+        from core.github_sync import GitHubClient
+
+        client = GitHubClient(
+            repo=getattr(args, "repo", None) or "teamhecked-Ayu/Vajrastra",
+            branch=getattr(args, "branch", None) or "main",
+        )
+        if not client.token():
+            _out(sys.stderr, "error: --push needs GITHUB_TOKEN set")
+            return 2
+
+    evolver = SelfEvolver(
+        ctx.root,
+        guard=ctx.guard,
+        memory=ctx.memory,
+        router=ModelRouter(),
+        client=client,
+        run_tests=not bool(getattr(args, "no_tests", False)),
+    )
+    result = evolver.review(push=push)
+
+    _out(out, _rule("findings"))
+    if result.findings:
+        for finding in result.findings:
+            _out(out, f"  [{finding.severity}] {finding.kind}: {finding.title} -- {finding.evidence[:160]}")
     else:
-        _out(out, "  nothing pending; ledger is fully verified")
+        _out(out, "  nothing observed; ledger is fully verified")
 
-    manifest = ctx.guard.read_manifest() or {}
-    lines = [
-        "# Evolution report",
-        "",
-        f"Generated: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
-        "",
-        f"- integrity: {report.status}",
-        f"- bundle: {report.bundle_sha256 or 'n/a'}",
-        f"- expected: {report.expected_bundle or 'n/a'}",
-        f"- sealed at: {report.sealed_at or 'n/a'}",
-        f"- files in lock: {len(manifest.get('files') or {})}",
-        f"- skills checked: {len(skills)}",
-        f"- skills failing firewall: {', '.join(failed) or 'none'}",
-        f"- unresolved lessons: {len(unresolved)}",
-        "",
-        "## Locked files",
-    ]
-    for rel in sorted((manifest.get("files") or {}).keys()):
-        lines.append(f"- {rel}")
-    lines.append("")
-    lines.append("## Guard rails")
-    lines.append("- The security layer is read-only: write_patch() refuses core/ paths.")
-    lines.append("- Every generated file is parsed by the AST firewall before it is written.")
-    lines.append("- Verified patches only: a lesson without a patch stays on the backlog.")
+    _out(out, _rule("candidates"))
+    if result.candidates:
+        for candidate in result.candidates:
+            if candidate.accepted:
+                _out(out, f"  {candidate.candidate_id} {candidate.path} -> accepted")
+            else:
+                _out(out, f"  {candidate.candidate_id} {candidate.path} -> rejected ({candidate.rejection_reason})")
+    else:
+        _out(out, "  no candidate improvements were proposed")
 
-    path = ctx.root / "memory_bank" / "evolution" / f"report-{_stamp()}.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _out(out, _rule("staging"))
+    _out(out, f"branch      : {result.staging_branch}")
+    _out(out, f"directory   : {result.staging_dir.relative_to(ctx.root)}")
+    _out(out, f"pushed      : {', '.join(result.pushed) or 'none (local staging only)'}")
+    for note in result.notes:
+        _out(out, f"note        : {note}")
+
     _out(out, _rule("report"))
-    _out(out, f"written     : {path.relative_to(ctx.root)}")
-    return 1 if failed else 0
+    _out(out, f"written     : {result.report_path.relative_to(ctx.root)}")
+    _out(out, f"duration    : {result.duration_s:.2f}s")
+    if failed:
+        _out(out, f"firewall    : {len(failed)} skill(s) failed: {', '.join(failed)}")
+        return 1
+    return 1 if report.status == "drift" else 0
 
 
 def cmd_memory(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
@@ -692,13 +759,70 @@ def cmd_sync(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
     return 0
 
 
+def cmd_worker(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
+    from core.github_sync import GitHubClient
+    from engines.job_worker import JobWorker, WorkerError
+
+    _out(out, _rule("vajrastra worker"))
+    client = GitHubClient(
+        repo=getattr(args, "repo", None) or "teamhecked-Ayu/Vajrastra",
+        branch=getattr(args, "branch", None) or "main",
+    )
+    if not client.token():
+        _out(sys.stderr, "error: no GITHUB_TOKEN set; the inbox cannot be polled")
+        return 2
+
+    worker = JobWorker(
+        ctx.root,
+        client=client,
+        router=ModelRouter(),
+        guard=ctx.guard,
+        memory=ctx.memory,
+        adapter=ctx.adapter,
+        branch=client.branch,
+        inbox=getattr(args, "inbox", None) or "workspace/inbox",
+        outbox=getattr(args, "outbox", None) or "workspace/outbox",
+        max_jobs=getattr(args, "max_jobs", 5),
+        allow_apply=bool(getattr(args, "allow_apply", False)),
+    )
+    _out(out, f"repository  : {client.repo}@{client.branch}")
+    _out(out, f"inbox       : {worker.inbox}")
+    iterations = 1 if bool(getattr(args, "once", False)) else getattr(args, "iterations", None)
+    _out(out, f"polls       : {'1 (once)' if iterations == 1 else (iterations or 'forever')}")
+
+    try:
+        outcomes = worker.run(
+            interval=float(getattr(args, "interval", 30.0) or 30.0), iterations=iterations
+        )
+    except WorkerError as exc:
+        _out(sys.stderr, f"error: {exc}")
+        return 2
+
+    _out(out, _rule("jobs"))
+    if not outcomes:
+        _out(out, "no pending jobs in the inbox")
+        return 0
+    failures = 0
+    for outcome in outcomes:
+        _out(out, f"  {outcome.job_id:<32} {'ok' if outcome.ok else 'failed'} ({outcome.duration_s:.2f}s)")
+        if outcome.summary:
+            _out(out, f"    summary   : {outcome.summary[:200]}")
+        if outcome.error:
+            _out(out, f"    error     : {outcome.error[:200]}")
+            failures += 1
+        if outcome.checkpoint_sha:
+            _out(out, f"    checkpoint: {outcome.checkpoint_sha[:12]}")
+    return 1 if failures else 0
+
+
 # ------------------------------------------------------------------------ REPL
 _HELP_TEXT = """\
 commands:
   fix <target>            four-stage hyper-debugger: recall, static, symbolic, patch
   build "<prompt>"        adversarial red/blue build of verified code
-  research "<topic>"      mine local memory and write a research brief
-  evolve                  integrity + firewall audit of the self-evolved surface
+  research "<topic>"      memory brief, then MCTS research with --seeds and --budget
+  evolve                  meta-critic self-evolution into a staged branch
+  worker                  poll workspace/inbox/ and execute dispatched jobs
   memory stats            ledger and skill counters
   memory search <query>   keyword / signature lookup
   sync [--push|--pull]    share lessons.sqlite with the other hosts via GitHub
@@ -713,6 +837,7 @@ def dispatch(ctx: AppContext, parser: argparse.ArgumentParser, argv: Sequence[st
         "build": cmd_build,
         "research": cmd_research,
         "evolve": cmd_evolve,
+        "worker": cmd_worker,
         "memory": cmd_memory,
         "sync": cmd_sync,
     }
@@ -790,10 +915,28 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--out", default=None, help="output directory for verified files")
     build.add_argument("--plan", action="store_true", help="write a plan only, no generation")
 
-    research = subparsers.add_parser("research", help="mine local memory for a topic")
+    research = subparsers.add_parser("research", help="memory brief plus MCTS research")
     research.add_argument("topic", nargs="+", help="research topic")
+    research.add_argument("--seeds", type=int, default=None, help="paired random seeds for the gate (default 3)")
+    research.add_argument("--budget", type=int, default=None, help="MCTS experiments to run (default 10)")
 
-    subparsers.add_parser("evolve", help="audit integrity and the self-evolved surface")
+    evolve = subparsers.add_parser("evolve", help="meta-critic self-evolution into a staged branch")
+    evolve.add_argument("--push", action="store_true", help="push staged candidates to self-upgrade/<ts>")
+    evolve.add_argument("--no-tests", action="store_true", help="skip the nested unittest gate")
+    evolve.add_argument("--repo", default=None, help="owner/name for the staging branch")
+    evolve.add_argument("--branch", default=None, help="base branch for staging (default: main)")
+
+    worker = subparsers.add_parser("worker", help="poll workspace/inbox/ and execute jobs")
+    worker.add_argument("--once", action="store_true", help="poll a single time and exit")
+    worker.add_argument("--interval", type=float, default=30.0, help="seconds between polls (default 30)")
+    worker.add_argument("--iterations", type=int, default=None, help="number of polls before exiting")
+    worker.add_argument("--inbox", default=None, help="remote inbox directory (default: workspace/inbox)")
+    worker.add_argument("--outbox", default=None, help="remote outbox directory (default: workspace/outbox)")
+    worker.add_argument("--max-jobs", dest="max_jobs", type=int, default=5, help="jobs per poll (default 5)")
+    worker.add_argument("--allow-apply", dest="allow_apply", action="store_true",
+                        help="permit fix jobs to write their verified patch")
+    worker.add_argument("--repo", default=None, help="owner/name (default: teamhecked-Ayu/Vajrastra)")
+    worker.add_argument("--branch", default=None, help="branch to poll (default: main)")
 
     memory = subparsers.add_parser("memory", help="inspect episodic memory")
     memory.add_argument("memory_action", choices=["search", "stats"])
@@ -839,6 +982,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "build": cmd_build,
             "research": cmd_research,
             "evolve": cmd_evolve,
+            "worker": cmd_worker,
             "memory": cmd_memory,
             "sync": cmd_sync,
         }

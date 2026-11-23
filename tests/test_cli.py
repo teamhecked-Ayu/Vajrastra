@@ -157,6 +157,27 @@ class CommandTests(CliTestCase):
         self.assertIn("GITHUB_TOKEN", err)
 
 
+    def test_research_runs_the_mcts_gate(self) -> None:
+        code, out, _ = self.run_cli(
+            ["research", "does standardisation help", "--seeds", "3", "--budget", "1"]
+        )
+        self.assertIn(code, (0, 1))
+        self.assertIn("statistical gate", out)
+        self.assertTrue((self.root / "results" / "metrics.tex").is_file())
+        self.assertTrue((self.root / "research_tree" / "tree_state.json").is_file())
+
+    def test_worker_without_token_is_an_error(self) -> None:
+        code, _, err = self.run_cli(["worker", "--once"])
+        self.assertEqual(code, 2)
+        self.assertIn("GITHUB_TOKEN", err)
+
+    def test_evolve_stages_candidates_locally(self) -> None:
+        code, out, _ = self.run_cli(["evolve"])
+        self.assertEqual(code, 0)
+        self.assertIn("staging", out)
+        self.assertIn("self-upgrade/", out)
+
+
 class ReplTests(CliTestCase):
     def test_repl_runs_command_and_exits(self) -> None:
         out = io.StringIO()
