@@ -11,6 +11,7 @@ on:
       - "tests/test_language_capabilities.py"
       - "tests/test_debug_context.py"
       - "tests/test_debugger_regression_generation.py"
+      - "tests/test_upstream_benchmark_manifest.py"
       - "docs/DEBUGGING_BENCHMARK.md"
       - ".github/workflows/debugging-benchmark.yml"
   pull_request:
@@ -19,7 +20,11 @@ on:
       - "benchmarks/debugging/**"
       - "engines/hyper_debugger.py"
       - "engines/language_capabilities.py"
+      - "engines/debug_context.py"
       - "tests/test_language_capabilities.py"
+      - "tests/test_debug_context.py"
+      - "tests/test_debugger_regression_generation.py"
+      - "tests/test_upstream_benchmark_manifest.py"
   workflow_dispatch:
 
 permissions:
