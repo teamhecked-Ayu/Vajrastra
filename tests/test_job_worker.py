@@ -35,6 +35,7 @@ class StubClient:
         self._token = token
         self.puts = []
         self.paths = []
+        self.existing_results = {}
 
     def token(self):
         return self._token
@@ -53,6 +54,8 @@ class StubClient:
 
     def get_file(self, path, ref=None):
         key = Path(path).stem
+        if path.startswith("workspace/outbox/"):
+            return self.existing_results.get(path)
         if key not in self.jobs:
             return None
         return StubRemote(json.dumps(self.jobs[key]))
@@ -113,6 +116,15 @@ class InboxTests(WorkerTestCase):
         client = StubClient({"legacy": {"id": "legacy", "kind": "memory", "action": "stats"}})
         jobs = self.worker(client).list_pending()
         self.assertEqual(jobs[0].payload["action"], "stats")
+
+    def test_existing_outbox_result_prevents_duplicate_delivery(self) -> None:
+        client = StubClient({
+            "job-1": {"id": "job-1", "kind": "memory", "payload": {"action": "stats"}}
+        })
+        client.existing_results["workspace/outbox/job-1.result.json"] = StubRemote(
+            json.dumps({"job_id": "job-1", "ok": True})
+        )
+        self.assertEqual(self.worker(client).list_pending(), [])
 
     def test_max_jobs_is_respected(self) -> None:
         client = StubClient(
