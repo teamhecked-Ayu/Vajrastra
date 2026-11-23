@@ -295,7 +295,12 @@ class ProjectIndex:
         }
         for test_path in self.tests:
             stem = Path(test_path).stem.removeprefix("test_").lower()
-            if stem in selected_stems or any(stem in item or item in stem for item in selected_stems):
+            path_terms = _terms(test_path.replace("/", " ").replace("_", " "))
+            if (
+                stem in selected_stems
+                or any(stem in item or item in stem for item in selected_stems)
+                or bool(tokens & path_terms)
+            ):
                 _add_unique(selected, test_path)
 
         # Core project files are always candidates for multi-file planning.
