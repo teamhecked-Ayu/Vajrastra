@@ -200,6 +200,8 @@ class PatchResult:
     executed: bool = False
     lesson_id: Optional[int] = None
     model: str = ""
+    baseline_tests_passed: Optional[bool] = None
+    regression_test_added: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -212,6 +214,8 @@ class PatchResult:
             "executed": self.executed,
             "lesson_id": self.lesson_id,
             "model": self.model,
+            "baseline_tests_passed": self.baseline_tests_passed,
+            "regression_test_added": self.regression_test_added,
         }
 
 
@@ -1025,16 +1029,20 @@ class HyperDebugger:
         if original is None:
             return PatchResult(target=str(target), message=f"cannot read {rel}")
 
+        baseline_ok, baseline_output, baseline_executed = self._run_project_tests()
+
         if self.router is None or not getattr(self.router, "available", False):
             return PatchResult(
                 target=rel,
                 message="no model configured: set GEMINI_API_KEY to generate a verified patch",
+                baseline_tests_passed=baseline_ok if baseline_executed else None,
             )
 
         prompt = (
             "You are the Blue Team fixing a defect. Return JSON with exactly these keys: "
             '{"root_cause": "one paragraph with evidence paths and lines", "patched_source": "the complete corrected file", '
-            '"test_command": "optional shell command or empty string"}.\n'
+            '"test_command": "optional shell command or empty string", '
+            '"regression_test": {"path": "tests/test_regression_case.py", "content": "complete test source"} or null}.\n'
             f"File: {rel}\nLanguage: {detect_language(primary)}\n\n"
             "Diagnostics:\n"
             + "\n".join(f"- {finding.render()}" for finding in analysis.findings[:30])
@@ -1077,6 +1085,28 @@ class HyperDebugger:
             )
 
         language = detect_language(primary)
+        extra_files: Dict[str, str] = {}
+        regression_test = data.get("regression_test")
+        if regression_test is not None:
+            if not isinstance(regression_test, Mapping):
+                return PatchResult(target=rel, message="regression_test must be an object or null",
+                                   root_cause=root_cause, model=response.model,
+                                   baseline_tests_passed=baseline_ok if baseline_executed else None)
+            test_path = str(regression_test.get("path") or "").replace("\\", "/")
+            test_content = regression_test.get("content")
+            if (not test_path.startswith("tests/test_") or not test_path.endswith(".py")
+                    or ".." in Path(test_path).parts
+                    or not isinstance(test_content, str) or not test_content.strip()):
+                return PatchResult(target=rel, message="generated regression test path/content rejected",
+                                   root_cause=root_cause, model=response.model,
+                                   baseline_tests_passed=baseline_ok if baseline_executed else None)
+            test_scan = self.guard.scan_source(test_content, filename=test_path)
+            if not test_scan.ok:
+                return PatchResult(target=rel, message="generated regression test rejected by security firewall",
+                                   root_cause=root_cause, model=response.model,
+                                   baseline_tests_passed=baseline_ok if baseline_executed else None)
+            extra_files[test_path] = test_content
+
         scan_ok = True
         scan_detail = ""
         if language == "python":
@@ -1096,7 +1126,7 @@ class HyperDebugger:
         output = ""
         if scan_ok:
             executed_ok, output, executed = self._verify_candidate(
-                rel, patched, command or None, language
+                rel, patched, command or None, language, extra_files=extra_files
             )
 
         verified = bool(scan_ok and executed_ok and executed)
@@ -1153,6 +1183,8 @@ class HyperDebugger:
             executed=executed,
             lesson_id=lesson.id,
             model=response.model,
+            baseline_tests_passed=baseline_ok if baseline_executed else None,
+            regression_test_added=bool(extra_files),
         )
 
     def _primary_file(self, analysis: Analysis, files: Sequence[Path]) -> Path:
@@ -1222,12 +1254,27 @@ class HyperDebugger:
             copied += 1
         return copied
 
+    def _run_project_tests(self) -> Tuple[Optional[bool], str, bool]:
+        """Run the existing unittest suite on a disposable pre-patch copy."""
+        if not (self.root / "tests").is_dir():
+            return (None, "no tests/ directory", False)
+        with tempfile.TemporaryDirectory(prefix="vajra-baseline-") as tmp:
+            workdir = Path(tmp)
+            self._copy_tree(workdir)
+            env = self._isolated_env(str(workdir))
+            command = [sys.executable, "-B", "-s", "-m", "unittest",
+                       "discover", "-s", "tests", "-v"]
+            ok, output = self._run(command, workdir, env)
+            return (ok, output, True)
+
     def _verify_candidate(
         self,
         rel: str,
         patched: str,
         command: Optional[Sequence[str]],
         language: str,
+        *,
+        extra_files: Optional[Mapping[str, str]] = None,
     ) -> Tuple[bool, str, bool]:
         """Run the patch in an isolated copy; returns (ok, output, executed)."""
         with tempfile.TemporaryDirectory(prefix="vajra-verify-") as tmp:
@@ -1236,6 +1283,10 @@ class HyperDebugger:
             target = workdir / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(patched, encoding="utf-8")
+            for extra_path, extra_source in (extra_files or {}).items():
+                extra_target = workdir / extra_path
+                extra_target.parent.mkdir(parents=True, exist_ok=True)
+                extra_target.write_text(extra_source, encoding="utf-8")
             env = self._isolated_env(str(workdir))
 
             if command:
@@ -1248,6 +1299,14 @@ class HyperDebugger:
             ok, output = self._run(compile_command, workdir, env)
             if not ok:
                 return (False, output, True)
+
+            if (workdir / "tests").is_dir():
+                suite_ok, suite_output = self._run(
+                    [sys.executable, "-B", "-s", "-m", "unittest",
+                     "discover", "-s", "tests", "-v"],
+                    workdir, env,
+                )
+                return (suite_ok, output + "\n" + suite_output, True)
 
             stem = Path(rel).stem
             tests = sorted(workdir.rglob(f"test_{stem}.py"))
