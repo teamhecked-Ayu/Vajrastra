@@ -40,6 +40,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from core.memory_engine import LessonRecord, MemoryEngine, normalize_signature
 from core.model_router import ModelRouter, ModelRouterError
 from core.security_guard import SecurityGuard, SecurityViolation
+from engines.debug_context import build_dependency_context
 
 SKIP_DIRS = frozenset(
     {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache",
@@ -156,6 +157,7 @@ class Analysis:
     signature: str = ""
     languages: Mapping[str, int] = field(default_factory=dict)
     notes: Tuple[str, ...] = ()
+    dependency_context: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def blocking(self) -> Tuple[Finding, ...]:
@@ -179,6 +181,7 @@ class Analysis:
             "signature": self.signature,
             "languages": dict(self.languages),
             "notes": list(self.notes),
+            "dependency_context": {key: list(value) for key, value in self.dependency_context.items()},
             "blocking": self.blocking_count,
         }
 
@@ -671,6 +674,19 @@ class HyperDebugger:
             else:
                 findings.extend(self._structural_scan(rel, source, language))
 
+        dependency_context = build_dependency_context(sources)
+        for source_path, dependencies in dependency_context.items():
+            for dependency in dependencies:
+                findings.append(
+                    Finding(
+                        stage=2,
+                        kind="dependency",
+                        severity="info",
+                        message=f"local dependency evidence: imports {dependency}",
+                        path=source_path,
+                    )
+                )
+
         signature = build_signature(findings, [self._rel(path) for path in files])
         lessons = self.recall(signature)
         for lesson in lessons:
@@ -705,6 +721,7 @@ class HyperDebugger:
             signature=signature,
             languages=languages,
             notes=tuple(notes),
+            dependency_context=dependency_context,
         )
 
     # --------------------------------------------------------------- stage 2
@@ -1016,7 +1033,7 @@ class HyperDebugger:
 
         prompt = (
             "You are the Blue Team fixing a defect. Return JSON with exactly these keys: "
-            '{"root_cause": "one paragraph", "patched_source": "the complete corrected file", '
+            '{"root_cause": "one paragraph with evidence paths and lines", "patched_source": "the complete corrected file", '
             '"test_command": "optional shell command or empty string"}.\n'
             f"File: {rel}\nLanguage: {detect_language(primary)}\n\n"
             "Diagnostics:\n"
