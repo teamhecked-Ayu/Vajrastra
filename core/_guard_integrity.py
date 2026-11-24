@@ -25,6 +25,7 @@ from core._guard_rules import (
     sha256_file,
 )
 
+
 class GuardIntegrityMixin:
     """Seal, verify and atomically write the trusted core."""
 
@@ -93,7 +94,7 @@ class GuardIntegrityMixin:
         expected = set(recorded)
         unexpected = [rel for rel in self.manifest_targets() if rel not in expected]
 
-        ok = not modified and not missing
+        ok = not modified and not missing and not unexpected
         return IntegrityReport(
             ok=ok,
             status="verified" if ok else "drift",
@@ -130,8 +131,8 @@ class GuardIntegrityMixin:
         """Validate *source* and atomically write it to *path*.
 
         The immutable security layer and the trusted core tree are refused
-        outright -- that is what stops a self-modified module from disabling the
-        firewall that is supposed to judge it.
+        outright -- that is what stops a self-modified module from disabling
+        the firewall that is supposed to judge it.
         """
         target = Path(path)
         if not target.is_absolute():
@@ -163,15 +164,3 @@ class GuardIntegrityMixin:
             if leftover.exists():
                 leftover.unlink()
         return result
-
-    def audit(self) -> Dict[str, Any]:
-        """Full trust report: integrity plus a scan of every manifest target."""
-        report = self.verify()
-        scans = [self.scan_file(rel) for rel in report.checked]
-        return {
-            "integrity": report.as_dict(),
-            "scans": [scan.as_dict() for scan in scans],
-            "protected": sorted(self.manifest_targets()),
-        }
-
-
