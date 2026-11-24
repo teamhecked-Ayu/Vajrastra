@@ -56,6 +56,11 @@ class FakeGitHubClient:
         self.pull_payload = None
         self.dispatches = 0
         self._blob_count = 0
+        self.artifacts = [{
+            "name": "watchdog-verification-py3.12",
+            "archive_download_url": "https://api.github.com/artifacts/77",
+            "expired": False,
+        }]
 
     def token(self):
         return "fake-token"
@@ -114,13 +119,7 @@ class FakeGitHubClient:
                 }]
             }
         if method == "GET" and path.endswith("/actions/runs/77/artifacts"):
-            return {
-                "artifacts": [{
-                    "name": "github-task-verification-py3.12",
-                    "archive_download_url": "https://api.github.com/artifacts/77",
-                    "expired": False,
-                }]
-            }
+            return {"artifacts": self.artifacts}
         if method == "POST" and path.endswith("/pulls"):
             self.pull_payload = payload
             return {
@@ -203,7 +202,7 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertTrue(result.verification.passed)
         self.assertEqual(result.verification.head_sha, result.commit.commit_sha)
         self.assertEqual(result.verification.run_id, 77)
-        self.assertEqual(result.verification.artifacts[0]["name"], "github-task-verification-py3.12")
+        self.assertEqual(result.verification.artifacts[0]["name"], "watchdog-verification-py3.12")
         self.assertEqual(result.pull_request.number, 9)
         self.assertEqual(result.pull_request.base_branch, "main")
         self.assertEqual(result.pull_request.head_branch, "vajrastra/work/test-change")
@@ -284,6 +283,26 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIsNone(result.pull_request)
         self.assertIsNone(client.pull_payload)
         self.assertEqual(client.branches["main"], "base-sha")
+
+    def test_success_without_artifact_blocks_pull_request(self):
+        client = FakeGitHubClient()
+        client.artifacts = []
+        _, engine, _ = self.workflow(client)
+        result = engine.run_task(
+            "main",
+            "fix service timeout parsing",
+            "vajrastra/work/no-artifact",
+            {"src/service.py": "VALUE = 7\\n"},
+            commit_message="fix: no artifact",
+            pr_title="Must not open without logs",
+            pr_body="",
+            timeout_seconds=5,
+            poll_interval=0.1,
+        )
+        self.assertEqual(result.verification.conclusion, "success")
+        self.assertFalse(result.verification.passed)
+        self.assertIsNone(result.pull_request)
+        self.assertIsNone(client.pull_payload)
 
     def test_only_fixed_watchdog_verification_workflow_is_allowed(self):
         client, engine, _ = self.workflow()
