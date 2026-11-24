@@ -246,10 +246,20 @@ class GitHubWorkflowTests(unittest.TestCase):
     def test_protected_paths_traversal_and_symlinks_are_rejected(self):
         client, engine, _ = self.workflow()
         _, plan = self.plan(engine, client)
-        for path in ("../escape.py", "core/session_manager.py", "core/security_lock.json", "private/link.py", "node_modules/pkg/index.py"):
+        for path in ("../escape.py", "core/session_manager.py", "core/security_lock.json", "AGENTS.md", "nested/AGENTS.md", "private/link.py", "node_modules/pkg/index.py"):
             with self.subTest(path=path):
                 with self.assertRaises(GitHubWorkflowError):
                     engine.prepare_changes(plan, {path: "VALUE = 1\n"})
+
+    def test_tampered_changeset_is_revalidated_before_branch_creation(self):
+        client, engine, _ = self.workflow()
+        _, plan = self.plan(engine, client)
+        changeset = engine.prepare_changes(plan, {"src/service.py": "VALUE = 8\\n"})
+        changeset.changes["core/session_manager.py"] = b"VALUE = 9\\n"
+        with self.assertRaises(GitHubWorkflowError):
+            engine.apply_changes(plan, changeset, message="tampered")
+        self.assertEqual(client.branches, {"main": "base-sha"})
+        self.assertEqual(client.ref_updates, [])
 
     def test_work_branch_name_is_restricted(self):
         for name in ("main", "feature/test", "vajrastra/work/../escape", "vajrastra/work/BadName"):
