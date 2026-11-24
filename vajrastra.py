@@ -13,6 +13,11 @@ Commands::
     vajrastra worker [--once] [--interval SECONDS]
     vajrastra memory <search|stats> [query]
     vajrastra sync [--push|--pull] [--import PATH]
+    vajrastra github inspect --base main --task "..."
+    vajrastra github apply --base main --branch vajrastra/work/<slug> --task "..." --changes changes.json
+
+GitHub writes require separate typed approval for branch creation, commit/push,
+and pull-request creation. The workflow never merges or deletes branches.
 
 With no arguments it opens the interactive REPL with the ``vajrastra>`` prompt.
 """
@@ -815,6 +820,124 @@ def cmd_worker(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
     return 1 if failures else 0
 
 
+
+def cmd_github(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
+    from core.github_sync import GitHubClient, GitHubError
+    from engines.github_workflow import (
+        ApprovalRequired,
+        GitHubWorkflow,
+        GitHubWorkflowError,
+    )
+
+    repo = getattr(args, "repo", None) or "teamhecked-Ayu/Vajrastra"
+    base = getattr(args, "base", None) or "main"
+    action = getattr(args, "github_action", "inspect")
+    client = GitHubClient(repo=repo, branch=base)
+    if not client.token():
+        _out(sys.stderr, "error: no GITHUB_TOKEN set; GitHub inspection is unavailable")
+        return 2
+
+    def request_approval(operation: str, fingerprint: str) -> bool:
+        phrase = f"APPROVE {operation} {fingerprint[:8]}"
+        _out(out, _rule(f"approval required: {operation}"))
+        _out(out, "This is a remote GitHub write. No action occurs unless you type the exact phrase.")
+        try:
+            answer = input(f"type {phrase}: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return answer == phrase
+
+    workflow = GitHubWorkflow(
+        client,
+        approval_callback=request_approval if action == "apply" else None,
+        approval_actor="interactive operator",
+    )
+    work_branch = getattr(args, "work_branch", None) or "vajrastra/work/preview"
+
+    try:
+        snapshot = workflow.inspect_branch(base, args.task)
+        plan = workflow.create_plan(snapshot, args.task, work_branch)
+        _out(out, _rule("github repository inspection"))
+        _out(out, f"repository  : {repo}")
+        _out(out, f"base branch : {base}")
+        _out(out, f"commit      : {snapshot.commit_sha}")
+        _out(out, f"safe files  : {len(snapshot.file_map)}")
+        _out(out, f"indexed     : {len(snapshot.contents)}")
+        _out(out, f"selected    : {len(plan.selected_files)}")
+        for item in snapshot.file_map[:80]:
+            _out(out, f"  {item.category:<14} {item.path} ({item.size} bytes)")
+        if len(snapshot.file_map) > 80:
+            _out(out, f"  ... {len(snapshot.file_map) - 80} more file(s)")
+        _out(out, _rule("selected project context"))
+        for selected in plan.selected_files:
+            _out(out, f"  {selected}")
+        _out(out, _rule("proposed plan"))
+        for number, step in enumerate(plan.steps, 1):
+            _out(out, f"  {number}. {step}")
+        for warning in snapshot.warnings[:20]:
+            _out(out, f"warning     : {warning}")
+        if action == "inspect":
+            _out(out, "read-only    : no branch, commit, push, or pull request was created")
+            return 0
+
+        changes_path = Path(args.changes).expanduser()
+        if not changes_path.is_absolute():
+            changes_path = (Path.cwd() / changes_path).resolve()
+        payload = json.loads(changes_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise GitHubWorkflowError("changes JSON must be an object mapping file paths to new text")
+        changeset = workflow.prepare_changes(plan, payload)
+        _out(out, _rule("proposed diff (not yet committed)"))
+        _out(out, changeset.diff)
+        _out(out, f"patch bytes : {changeset.total_bytes}")
+        commit = workflow.apply_changes(
+            plan, changeset, message=getattr(args, "message", "feat: approved GitHub task")
+        )
+        _out(out, _rule("approved work branch commit"))
+        _out(out, f"branch      : {commit.branch}")
+        _out(out, f"commit      : {commit.commit_sha}")
+        _out(out, f"changed     : {', '.join(commit.changed_paths)}")
+
+        verification = workflow.verify_branch(
+            plan,
+            commit,
+            workflow=getattr(args, "workflow", "watchdog.yml"),
+            timeout_seconds=float(getattr(args, "timeout", 900.0)),
+            poll_interval=float(getattr(args, "poll_interval", 15.0)),
+        )
+        _out(out, _rule("remote verification"))
+        _out(out, f"status      : {verification.status}")
+        _out(out, f"conclusion  : {verification.conclusion or 'pending'}")
+        if verification.html_url:
+            _out(out, f"run logs    : {verification.html_url}")
+        for artifact in verification.artifacts:
+            _out(out, f"artifact    : {artifact.get('name')} {artifact.get('url')}")
+        if not verification.passed:
+            _out(sys.stderr, "pull request blocked: remote verification did not pass")
+            return 1
+
+        pull = workflow.create_pull_request(
+            plan,
+            verification,
+            title=getattr(args, "title", "Vajrastra: approved repository task"),
+            body=getattr(args, "body", ""),
+            draft=True,
+        )
+        _out(out, _rule("draft pull request"))
+        _out(out, f"PR          : #{pull.number}")
+        _out(out, f"url         : {pull.html_url}")
+        _out(out, f"base        : {pull.base_branch}")
+        _out(out, f"head        : {pull.head_branch}")
+        _out(out, "merged      : no")
+        return 0
+    except ApprovalRequired as exc:
+        _out(sys.stderr, f"approval denied: {exc}")
+        return 3
+    except (GitHubError, GitHubWorkflowError, OSError, ValueError, json.JSONDecodeError) as exc:
+        _out(sys.stderr, f"github workflow error: {exc}")
+        return 2
+
+
 # ------------------------------------------------------------------------ REPL
 _HELP_TEXT = """\
 commands:
@@ -823,6 +946,8 @@ commands:
   research "<topic>"      memory brief, then MCTS research with --seeds and --budget
   evolve                  meta-critic self-evolution into a staged branch
   worker                  poll workspace/inbox/ and execute dispatched jobs
+  github inspect          read-only branch map and proposed plan
+  github apply            approved work-branch, test, and draft-PR workflow
   memory stats            ledger and skill counters
   memory search <query>   keyword / signature lookup
   sync [--push|--pull]    share lessons.sqlite with the other hosts via GitHub
@@ -838,6 +963,7 @@ def dispatch(ctx: AppContext, parser: argparse.ArgumentParser, argv: Sequence[st
         "research": cmd_research,
         "evolve": cmd_evolve,
         "worker": cmd_worker,
+        "github": cmd_github,
         "memory": cmd_memory,
         "sync": cmd_sync,
     }
@@ -952,6 +1078,27 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--branch", default=None, help="branch to sync with (default: main)")
     sync.add_argument("--remote-path", dest="remote_path", default=None,
                        help="remote ledger path (default: memory_bank/lessons.sqlite)")
+
+    github = subparsers.add_parser("github", help="approval-gated GitHub repository workflow")
+    github_sub = github.add_subparsers(dest="github_action", required=True)
+    inspect = github_sub.add_parser("inspect", help="read-only branch inventory and task plan")
+    inspect.add_argument("--repo", default="teamhecked-Ayu/Vajrastra")
+    inspect.add_argument("--base", default="main")
+    inspect.add_argument("--task", required=True)
+    inspect.add_argument("--work-branch", default="vajrastra/work/preview")
+
+    apply = github_sub.add_parser("apply", help="show diff, request approvals, verify, and open draft PR")
+    apply.add_argument("--repo", default="teamhecked-Ayu/Vajrastra")
+    apply.add_argument("--base", default="main")
+    apply.add_argument("--branch", dest="work_branch", required=True)
+    apply.add_argument("--task", required=True)
+    apply.add_argument("--changes", required=True, help="JSON object mapping file paths to replacement text")
+    apply.add_argument("--message", default="feat: approved GitHub repository task")
+    apply.add_argument("--title", required=True)
+    apply.add_argument("--body", default="")
+    apply.add_argument("--workflow", default="watchdog.yml")
+    apply.add_argument("--timeout", type=float, default=900.0)
+    apply.add_argument("--poll-interval", type=float, default=15.0)
     return parser
 
 
@@ -983,6 +1130,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "research": cmd_research,
             "evolve": cmd_evolve,
             "worker": cmd_worker,
+            "github": cmd_github,
             "memory": cmd_memory,
             "sync": cmd_sync,
         }

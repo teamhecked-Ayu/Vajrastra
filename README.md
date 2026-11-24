@@ -103,3 +103,13 @@ GitHub Actions currently runs the watchdog workflow on Ubuntu with Python 3.10 a
 The project is under active development. A module existing in the repository does not mean its feature is complete. Planned capabilities such as a vector store, knowledge graph, reasoning ensemble, multi-agent swarm, research swarm and dedicated automatic test generator must be treated as future work until implemented and tested.
 
 Development follows the staged roadmap in the Vajrastra Final Project Blueprint. A phase is complete only when its documented exit criteria pass.
+
+## GitHub-native repository workflow
+
+Vajrastra can inspect a GitHub branch, prepare a safe file map and diff, push
+only to a dedicated `vajrastra/work/*` branch after typed approval, run the
+push-triggered watchdog, collect test artifacts, and open a draft PR after
+verification passes.
+
+See [Approval-gated GitHub workflows](docs/GITHUB_WORKFLOWS.md) for setup,
+commands, approval rules, limits, and examples.

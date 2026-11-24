@@ -32,11 +32,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Byte-compile the package
-        run: python -m compileall -q core engines templates vajrastra.py tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m compileall -q core engines templates vajrastra.py tests 2>&1 | tee -a verification.log
 
       - name: Verify the sealed core
+        shell: bash
         run: |
-          python - <<'PY'
+          set -o pipefail
+          python - <<'PY' 2>&1 | tee -a verification.log
           import sys
           from pathlib import Path
 
@@ -54,15 +59,31 @@ jobs:
           PY
 
       - name: Run the unit test suite
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -v 2>&1 | tee -a verification.log
         env:
           PYTHONDONTWRITEBYTECODE: "1"
 
       - name: Smoke-run the CLI without optional engines
+        shell: bash
         run: |
-          python vajrastra.py --help
-          python vajrastra.py --root "$RUNNER_TEMP/wd" memory stats
-          # the gate may legitimately return 1 (not significant); only crash here matters
-          python vajrastra.py --root "$RUNNER_TEMP/wd" research "watchdog smoke" --seeds 3 --budget 1 \
-            || echo "research gate returned non-zero (expected when the gate is not significant)"
-          python vajrastra.py --root "$RUNNER_TEMP/wd" worker --once || true
+          set -o pipefail
+          {
+            python vajrastra.py --help
+            python vajrastra.py --root "$RUNNER_TEMP/wd" memory stats
+            # The research gate may legitimately return non-zero when it is not significant.
+            python vajrastra.py --root "$RUNNER_TEMP/wd" research "watchdog smoke" --seeds 3 --budget 1 \
+              || echo "research gate returned non-zero (expected when the gate is not significant)"
+            python vajrastra.py --root "$RUNNER_TEMP/wd" worker --once || true
+          } 2>&1 | tee -a verification.log
+
+      - name: Upload verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: watchdog-verification-py${{ matrix.python-version }}
+          path: verification.log
+          if-no-files-found: warn
+          retention-days: 14
