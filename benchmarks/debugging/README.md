@@ -1,23 +1,41 @@
 # Debugging and patch-verification benchmark
 
-This benchmark is deliberately offline and deterministic. It runs the debugger
-against a small set of checked-in regression fixtures, then runs each fixture's
-failing baseline test and passing corrected test in a fresh subprocess.
+This benchmark has two separate layers.
 
-It reports:
-- defect-detection accuracy against the fixture's expected finding marker;
-- baseline reproduction rate;
-- fixed-test pass rate;
-- wall-clock runtime.
+## 1. Deterministic offline fixtures
 
-These fixtures are an initial harness, **not yet the blueprint's required
-external real-bug benchmark**. Do not claim Phase 3's benchmark exit gate passed
-until cases are added from pinned real upstream bug reports/commits and the
-results are published across supported Python versions.
+The checked-in fixtures exercise three known defect classes:
+
+- division by a literal zero;
+- mutable default argument state leakage;
+- swallowed exceptions.
+
+The runner executes the debugger against each fixture, reproduces the broken
+baseline test, then verifies the corrected test in a fresh subprocess.
 
 Run from the repository root:
 
     python benchmarks/debugging/run_benchmark.py
 
-No network calls or optional packages are required. The benchmark uses the
-standard-library debugger path and disables model review.
+No network calls or optional packages are required.
+
+## 2. Pinned real upstream bugs
+
+The BugsInPy benchmark records exact buggy/fixed commits for PySnooper and
+Black. It checks out both revisions, overlays regression tests that were added
+in the fixed commits, and requires the buggy revision to fail with the declared
+regression signature while the fixed revision passes.
+
+See [UPSTREAM.md](UPSTREAM.md), the machine-readable
+[upstream_cases.json](upstream_cases.json), and the
+[latest measured results](RESULTS.md).
+
+## Measurement limits
+
+The three deterministic fixtures are a small smoke benchmark, not a
+representative sample of arbitrary software defects. Their 100% results do not
+mean Vajrastra has 100% general debugging accuracy. The benchmark disables
+model review and does not measure model-generated patch accuracy.
+
+The upstream tests verify known historical bug/fix pairs. They do not prove
+that Vajrastra independently discovered or generated those upstream patches.
