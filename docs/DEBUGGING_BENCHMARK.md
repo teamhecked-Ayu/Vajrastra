@@ -12,22 +12,30 @@
 - A language capability probe reports only tools found on the current host.
   It does not install tools and does not infer compiler or test-runner support
   from a filename extension.
-- CI runs the unit suite and benchmark on Python 3.10 and 3.12 and uploads the
-  JSON report.
+- CI runs the unit suite and deterministic benchmark on Python 3.10 and 3.12.
+- A separate pinned BugsInPy workflow reproduces PySnooper bug 1 on Python 3.8.1
+  and Black bug 1 on Python 3.8.3. It verifies buggy-fails/fixed-passes and
+  uploads per-case JSON reports.
 
 ## Run locally
 
     python -m unittest discover -s tests -v
     python benchmarks/debugging/run_benchmark.py
 
-## Limits and exit gate
+See [UPSTREAM.md](../benchmarks/debugging/UPSTREAM.md) for the pinned upstream
+reproduction workflow and exact local commands.
 
-The checked-in cases are deterministic engineering fixtures. They are not a
-substitute for a benchmark of pinned upstream bugs. The blueprint requires real,
-reproducible bugs and published benchmark accuracy, regression rate, and runtime.
-Add upstream cases with issue/commit references, exact reproduction commands,
-expected fixes, and license-compatible minimal fixtures before calling Phase 3
-complete.
+## Exit gate
+
+Phase 3 is not complete until both pinned upstream cases pass:
+- the exact buggy revision fails its focused regression test;
+- the exact fixed revision passes the same test;
+- the exact Python patch version and Git SHA are recorded;
+- the uploaded JSON reports are inspected.
+
+These tests validate known upstream bug reproduction and correction. They do
+not measure whether Vajrastra's model can independently discover or generate
+the correct patch.
 
 The existing repair path still requires an explicit model response and a
 verification harness. AST checks and subprocess execution are not an OS-level
