@@ -46,7 +46,7 @@ jobs:
           cp upstream/fixed/tests/utils.py upstream/buggy/tests/utils.py
           python -m pip install --upgrade "pip<21" "setuptools<45" "wheel<0.38"
           python -m pip install "pytest==4.6.11" "python_toolbox==0.9.3"
-      - name: Require UnicodeDecodeError on buggy and pass on fixed
+      - name: Require UnicodeEncodeError on buggy and pass on fixed
         run: |
           set +e
           (cd upstream/buggy && python -m pytest -q -s tests/test_chinese.py::test_chinese) > buggy.log 2>&1
@@ -57,7 +57,7 @@ jobs:
           cat buggy.log
           cat fixed.log
           test "$buggy_status" -ne 0
-          grep -q "UnicodeDecodeError" buggy.log
+          grep -q "UnicodeEncodeError" buggy.log
           test "$fixed_status" -eq 0
 
   black:

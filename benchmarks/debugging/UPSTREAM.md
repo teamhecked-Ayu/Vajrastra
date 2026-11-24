@@ -4,7 +4,8 @@ This manifest records two BugsInPy cases at an immutable dataset commit:
 
 - **PySnooper bug 1:** the patch is a Python 2 compatibility fix. The dataset's
   recorded Python 3.8.1 environment does not reproduce it. The benchmark uses
-  Python 2.7.18, the final Python 2 release.
+  Python 2.7.18, the final Python 2 release, and pins a compatible
+  `python_toolbox` test dependency.
 - **Black bug 1:** Python 3.8.3, with a regression test added in the fixed
   revision.
 
@@ -15,10 +16,10 @@ The runner restricts overlays to regular files under `tests/`, rejects
 symlinks, and verifies both Git revisions before running tests.
 
 A non-zero exit code alone is not accepted as a reproduction. Each buggy case
-must fail with its declared failure signature (`UnicodeDecodeError` for
-PySnooper, `OSError` for Black), while the fixed revision must pass. This
-prevents missing tests, import errors, or broken test environments from being
-counted as successful bug reproductions.
+must fail with its declared failure signature (`UnicodeEncodeError` for
+PySnooper, `AssertionError: 1 != 0` for Black), while the fixed revision must
+pass. This prevents missing tests, import errors, or broken test environments
+from being counted as successful bug reproductions.
 
 ## Automated GitHub Actions reproduction
 

@@ -29,10 +29,16 @@ class UpstreamBenchmarkManifestTests(unittest.TestCase):
         data = json.loads((BENCHMARK_DIR / "upstream_cases.json").read_text(encoding="utf-8"))
         case = next(item for item in data["cases"] if item["id"] == "pysnooper-1")
         self.assertEqual(case["python_version"], "2.7.18")
+        self.assertEqual(case["buggy_failure_pattern"], "UnicodeEncodeError")
         self.assertEqual(
             case["test_overlays_from_fixed"],
             ["tests/test_chinese.py", "tests/utils.py"],
         )
+
+    def test_black_bug_is_expected_to_fail_with_assertion_on_buggy_revision(self):
+        data = json.loads((BENCHMARK_DIR / "upstream_cases.json").read_text(encoding="utf-8"))
+        case = next(item for item in data["cases"] if item["id"] == "black-1")
+        self.assertEqual(case["buggy_failure_pattern"], "AssertionError: 1 != 0")
 
     def test_case_filter_selects_only_requested_case_and_rejects_unknown_ids(self):
         cases = [{"id": "one"}, {"id": "two"}]

@@ -15,7 +15,7 @@
       "test_command": ["pytest", "-q", "-s", "tests/test_chinese.py::test_chinese"],
       "test_overlays_from_fixed": ["tests/test_chinese.py", "tests/utils.py"],
       "test_dependencies": ["pytest==4.6.11", "python_toolbox==0.9.3"],
-      "buggy_failure_pattern": "UnicodeDecodeError",
+      "buggy_failure_pattern": "UnicodeEncodeError",
       "changed_files": ["pysnooper/pycompat.py", "pysnooper/tracer.py", "tests/utils.py"],
       "dataset_metadata": "projects/PySnooper/bugs/1/bug.info",
       "upstream_patch": "projects/PySnooper/bugs/1/bug_patch.txt",
