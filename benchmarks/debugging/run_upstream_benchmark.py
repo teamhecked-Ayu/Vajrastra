@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = Path(__file__).with_name("upstream_cases.json")
 
 
@@ -22,6 +21,58 @@ def git_head(path: Path) -> str:
     return result.stdout.strip()
 
 
+def select_cases(cases: list[dict], requested: list[str]) -> list[dict]:
+    known = {case["id"] for case in cases}
+    unknown = sorted(set(requested) - known)
+    if unknown:
+        raise ValueError("unknown case id(s): " + ", ".join(unknown))
+    selected = set(requested)
+    return [case for case in cases if not selected or case["id"] in selected]
+
+
+def _safe_relative_path(raw_path: str) -> Path:
+    relative = Path(raw_path)
+    if relative.is_absolute() or not relative.parts or any(part in {".", ".."} for part in relative.parts):
+        raise ValueError(f"unsafe overlay path: {raw_path}")
+    return relative
+
+
+def apply_test_overlay(case: dict, buggy: Path, fixed: Path) -> str:
+    """Copy a regression test absent from the buggy revision, without following symlinks."""
+    raw_path = case.get("test_overlay_from_fixed")
+    if not raw_path:
+        return "not-required"
+    relative = _safe_relative_path(raw_path)
+    source = fixed / relative
+    target = buggy / relative
+
+    current = fixed
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise RuntimeError(f"symlink in fixed test overlay path: {current}")
+    current = buggy
+    for part in relative.parts[:-1]:
+        current = current / part
+        if current.is_symlink():
+            raise RuntimeError(f"symlink in buggy test overlay path: {current}")
+
+    if not source.is_file():
+        raise RuntimeError(f"fixed revision is missing regression test: {source}")
+    if target.exists():
+        if target.is_symlink() or not target.is_file():
+            raise RuntimeError(f"unsafe existing regression test target: {target}")
+        if target.read_bytes() != source.read_bytes():
+            raise RuntimeError(f"buggy revision already has a different regression test: {target}")
+        return "already-present"
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.parent.resolve() != (buggy / relative.parent).resolve():
+        raise RuntimeError("regression test target escaped buggy checkout")
+    shutil.copyfile(str(source), str(target))
+    return "copied-from-fixed-revision"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -31,6 +82,10 @@ def main() -> int:
     parser.add_argument(
         "--python", action="append", default=[],
         help="case-id=/path/to/python interpreter (repeat for each case)",
+    )
+    parser.add_argument(
+        "--case", action="append", default=[],
+        help="run only this case ID; repeat to select more than one",
     )
     args = parser.parse_args()
     supplied = {}
@@ -54,10 +109,15 @@ def main() -> int:
         supplied[(case_id, revision)] = Path(raw_path).resolve()
 
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    try:
+        cases = select_cases(manifest["cases"], args.case)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     results = []
     started = time.perf_counter()
     failed = False
-    for case in manifest["cases"]:
+    for case in cases:
         case_id = case["id"]
         case_result = {"id": case_id, "python_expected": case["python_version"]}
         interpreter = interpreters.get(case_id)
@@ -80,11 +140,15 @@ def main() -> int:
             failed = True
             results.append(case_result)
             continue
+
+        paths = {}
+        revisions_valid = True
         for revision in ("buggy", "fixed"):
             path = supplied.get((case_id, revision))
             if path is None:
                 case_result[revision] = {"status": "missing-checkout"}
                 failed = True
+                revisions_valid = False
                 continue
             expected_sha = case[f"{revision}_commit"]
             actual_sha = git_head(path)
@@ -93,14 +157,31 @@ def main() -> int:
                     "status": "wrong-revision", "expected": expected_sha, "actual": actual_sha,
                 }
                 failed = True
-                continue
+                revisions_valid = False
+            else:
+                paths[revision] = path
+        if not revisions_valid:
+            results.append(case_result)
+            continue
+
+        try:
+            case_result["test_overlay"] = apply_test_overlay(
+                case, paths["buggy"], paths["fixed"]
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            case_result["test_overlay"] = {"status": "failed", "error": str(exc)}
+            failed = True
+            results.append(case_result)
+            continue
+
+        for revision in ("buggy", "fixed"):
             command = list(case["test_command"])
             if command[0] == "python":
                 command[0] = str(interpreter)
             elif command[0] == "pytest":
                 command = [str(interpreter), "-m", "pytest", *command[1:]]
             run = subprocess.run(
-                command, cwd=str(path), capture_output=True, text=True,
+                command, cwd=str(paths[revision]), capture_output=True, text=True,
                 timeout=180, stdin=subprocess.DEVNULL, check=False,
             )
             passed = run.returncode == 0
@@ -119,6 +200,7 @@ def main() -> int:
         "schema_version": 1,
         "benchmark": "bugsinpy-upstream-reproduction",
         "dataset": manifest["dataset"],
+        "selected_cases": [case["id"] for case in cases],
         "python_interpreters": {key: str(value) for key, value in interpreters.items()},
         "results": results,
         "runtime_seconds": round(time.perf_counter() - started, 4),
