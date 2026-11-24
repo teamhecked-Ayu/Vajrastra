@@ -28,7 +28,7 @@ MAX_TOTAL_BYTES = 8 * 1024 * 1024
 MAX_PATCH_FILES = 40
 MAX_PATCH_BYTES = 2 * 1024 * 1024
 MAX_DIFF_CHARS = 60000
-DEFAULT_WORKFLOW = "github-task-verify.yml"
+DEFAULT_WORKFLOW = "watchdog.yml"
 PROTECTED_PATHS = ("core/",)
 PROTECTED_FILES = {"AGENTS.md", "core/security_lock.json"}
 EXCLUDED_PARTS = {
@@ -632,6 +632,8 @@ class GitHubWorkflow:
             raise GitHubWorkflowError("GitHub did not return a commit SHA")
 
         ref_path = f"/repos/{self.repo}/git/refs/heads/{quote(plan.work_branch, safe='/')}"
+        if self.client.branch_sha(plan.work_branch) != parent_sha:
+            raise StaleRepositorySnapshot("work branch changed before the approved commit was pushed")
         self.client.request("PATCH", ref_path, {"sha": commit_sha, "force": False})
         if self.client.branch_sha(plan.work_branch) != commit_sha:
             raise GitHubWorkflowError("work branch ref did not advance to the approved commit")
@@ -651,23 +653,17 @@ class GitHubWorkflow:
         timeout_seconds: float = 900.0,
         poll_interval: float = 15.0,
     ) -> VerificationResult:
-        """Dispatch a fixed repository test workflow and collect its artifact links."""
+        """Wait for the push-triggered watchdog and collect its test artifact links."""
         if commit.branch != plan.work_branch:
             raise GitHubWorkflowError("commit result belongs to a different work branch")
         if self.client.branch_sha(plan.work_branch) != commit.commit_sha:
             raise StaleRepositorySnapshot("work branch moved after the approved commit")
         if workflow != DEFAULT_WORKFLOW:
             raise GitHubWorkflowError("only the fixed github-task-verify.yml workflow may be dispatched")
-        self.client.request(
-            "POST",
-            f"/repos/{self.repo}/actions/workflows/{quote(workflow, safe='')}/dispatches",
-            {"ref": plan.work_branch, "inputs": {"target_ref": plan.work_branch}},
-        )
-
         deadline = self._monotonic() + max(1.0, timeout_seconds)
         query = (
             f"/repos/{self.repo}/actions/runs?branch={quote(plan.work_branch, safe='')}"
-            "&event=workflow_dispatch&per_page=50"
+            "&event=push&per_page=50"
         )
         while self._monotonic() < deadline:
             response = self.client.request("GET", query)
@@ -676,7 +672,7 @@ class GitHubWorkflow:
                 run for run in runs
                 if isinstance(run, Mapping)
                 and run.get("head_sha") == commit.commit_sha
-                and run.get("event") == "workflow_dispatch"
+                and run.get("event") == "push"
                 and str(run.get("path") or "").split("@", 1)[0].endswith(workflow)
             ]
             matching.sort(key=lambda item: int(item.get("id") or 0), reverse=True)
@@ -729,6 +725,10 @@ class GitHubWorkflow:
         self.validate_work_branch(plan.work_branch, plan.snapshot.branch)
         if plan.work_branch == plan.snapshot.branch:
             raise GitHubWorkflowError("pull request head and base must differ")
+        if self.client.branch_sha(plan.work_branch) != verification.head_sha:
+            raise StaleRepositorySnapshot("work branch changed after successful verification")
+        if self.client.branch_sha(plan.snapshot.branch) != plan.snapshot.commit_sha:
+            raise StaleRepositorySnapshot("base branch changed before pull request creation")
         if not title.strip():
             raise GitHubWorkflowError("pull request title must be non-empty")
         approval_fingerprint = _sha256(
