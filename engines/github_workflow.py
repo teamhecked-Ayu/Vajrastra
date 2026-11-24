@@ -129,6 +129,7 @@ class VerificationResult:
     conclusion: Optional[str]
     html_url: str
     artifacts: Sequence[Mapping[str, Any]] = ()
+    head_sha: str = ""
 
     @property
     def passed(self) -> bool:
@@ -482,6 +483,8 @@ class GitHubWorkflow:
             path = _safe_repo_path(raw_path)
             if path in unsafe:
                 raise GitHubWorkflowError(f"refusing unsafe repository path: {path}")
+            if _excluded_path(path):
+                raise GitHubWorkflowError(f"excluded generated/vendor path cannot be changed: {path}")
             if path in PROTECTED_FILES or any(path.startswith(prefix) for prefix in PROTECTED_PATHS):
                 raise GitHubWorkflowError(f"protected path cannot be changed by this workflow: {path}")
             if PurePosixPath(path).suffix.lower() not in {
@@ -516,6 +519,8 @@ class GitHubWorkflow:
                     if remote is None or (entry.sha and remote.sha != entry.sha):
                         raise StaleRepositorySnapshot(f"{path} changed after inspection")
                     original = remote.data
+                    if len(original) > self.limits.max_file_bytes:
+                        raise GitHubWorkflowError(f"existing file exceeds the read limit: {path}")
             try:
                 old_text = original.decode("utf-8")
             except UnicodeDecodeError as exc:
@@ -560,6 +565,11 @@ class GitHubWorkflow:
         """Create a fresh work branch and push one atomic Git commit after approval."""
         if changeset.plan_fingerprint != plan.fingerprint:
             raise GitHubWorkflowError("change set does not belong to this plan")
+        self.validate_work_branch(plan.work_branch, plan.snapshot.branch)
+        refreshed = self.prepare_changes(plan, changeset.changes)
+        if refreshed.fingerprint != changeset.fingerprint:
+            raise GitHubWorkflowError("change set changed after its diff was approved")
+        changeset = refreshed
         if self.client.branch_sha(plan.snapshot.branch) != plan.snapshot.commit_sha:
             raise StaleRepositorySnapshot("base branch changed before branch creation")
         if self.client.branch_sha(plan.work_branch):
@@ -646,8 +656,8 @@ class GitHubWorkflow:
             raise GitHubWorkflowError("commit result belongs to a different work branch")
         if self.client.branch_sha(plan.work_branch) != commit.commit_sha:
             raise StaleRepositorySnapshot("work branch moved after the approved commit")
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+\.ya?ml", workflow):
-            raise GitHubWorkflowError("workflow must be a workflow filename, not an arbitrary path")
+        if workflow != DEFAULT_WORKFLOW:
+            raise GitHubWorkflowError("only the fixed github-task-verify.yml workflow may be dispatched")
         self.client.request(
             "POST",
             f"/repos/{self.repo}/actions/workflows/{quote(workflow, safe='')}/dispatches",
@@ -692,6 +702,7 @@ class GitHubWorkflow:
                         conclusion=str(run.get("conclusion") or "failure"),
                         html_url=str(run.get("html_url") or ""),
                         artifacts=tuple(artifacts),
+                        head_sha=commit.commit_sha,
                     )
             self._sleep(max(0.1, poll_interval))
         return VerificationResult(
@@ -700,6 +711,7 @@ class GitHubWorkflow:
             conclusion=None,
             html_url="",
             artifacts=(),
+            head_sha=commit.commit_sha,
         )
 
     def create_pull_request(
@@ -712,13 +724,17 @@ class GitHubWorkflow:
         draft: bool = True,
     ) -> PullRequestResult:
         """Open a draft PR only after tests pass and the operator approves it."""
-        if not verification.passed:
-            raise GitHubWorkflowError("pull request blocked: verification has not passed")
+        if not verification.passed or not verification.head_sha:
+            raise GitHubWorkflowError("pull request blocked: verification has not passed for a commit")
+        self.validate_work_branch(plan.work_branch, plan.snapshot.branch)
         if plan.work_branch == plan.snapshot.branch:
             raise GitHubWorkflowError("pull request head and base must differ")
         if not title.strip():
             raise GitHubWorkflowError("pull request title must be non-empty")
-        self._approve("create_pull_request", plan.fingerprint)
+        approval_fingerprint = _sha256(
+            f"{plan.fingerprint}:{verification.head_sha}:{verification.run_id}".encode("utf-8")
+        )
+        self._approve("create_pull_request", approval_fingerprint)
         response = self.client.request(
             "POST",
             f"/repos/{self.repo}/pulls",
