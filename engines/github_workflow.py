@@ -490,7 +490,11 @@ class GitHubWorkflow:
                 raise GitHubWorkflowError(f"refusing unsafe repository path: {path}")
             if _excluded_path(path):
                 raise GitHubWorkflowError(f"excluded generated/vendor path cannot be changed: {path}")
-            if path in PROTECTED_FILES or any(path.startswith(prefix) for prefix in PROTECTED_PATHS):
+            if (
+                path in PROTECTED_FILES
+                or PurePosixPath(path).name == "AGENTS.md"
+                or any(path.startswith(prefix) for prefix in PROTECTED_PATHS)
+            ):
                 raise GitHubWorkflowError(f"protected path cannot be changed by this workflow: {path}")
             if PurePosixPath(path).suffix.lower() not in {
                 ".py", ".md", ".rst", ".txt", ".toml", ".cfg", ".ini",
