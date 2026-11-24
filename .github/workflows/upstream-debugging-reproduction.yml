@@ -1,0 +1,104 @@
+name: upstream-debugging-reproduction
+
+on:
+  push:
+    branches: ["feat/phase-3-debugging-code-generation"]
+    paths:
+      - "benchmarks/debugging/**"
+      - "tests/test_upstream_benchmark_manifest.py"
+      - ".github/workflows/upstream-debugging-reproduction.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "benchmarks/debugging/**"
+      - "tests/test_upstream_benchmark_manifest.py"
+      - ".github/workflows/upstream-debugging-reproduction.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pysnooper:
+    name: PySnooper bug 1 / Python 2.7.18
+    runs-on: ubuntu-latest
+    container: python:2.7.18-buster
+    steps:
+      - name: Check out Vajrastra
+        uses: actions/checkout@v4
+      - name: Check out buggy PySnooper revision
+        uses: actions/checkout@v4
+        with:
+          repository: cool-RR/PySnooper
+          ref: e21a31162f4c54be693d8ca8260e42393b39abd3
+          path: upstream/buggy
+      - name: Check out fixed PySnooper revision
+        uses: actions/checkout@v4
+        with:
+          repository: cool-RR/PySnooper
+          ref: 56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2
+          path: upstream/fixed
+      - name: Verify revisions, overlay tests, and install pinned dependencies
+        run: |
+          test "$(git -C upstream/buggy rev-parse HEAD)" = "e21a31162f4c54be693d8ca8260e42393b39abd3"
+          test "$(git -C upstream/fixed rev-parse HEAD)" = "56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2"
+          cp upstream/fixed/tests/test_chinese.py upstream/buggy/tests/test_chinese.py
+          cp upstream/fixed/tests/utils.py upstream/buggy/tests/utils.py
+          python -m pip install --upgrade "pip<21" "setuptools<45" "wheel<0.38"
+          python -m pip install "pytest==4.6.11" "python_toolbox==0.9.3"
+      - name: Require UnicodeEncodeError on buggy and pass on fixed
+        run: |
+          set +e
+          (cd upstream/buggy && python -m pytest -q -s tests/test_chinese.py::test_chinese) > buggy.log 2>&1
+          buggy_status=$?
+          (cd upstream/fixed && python -m pytest -q -s tests/test_chinese.py::test_chinese) > fixed.log 2>&1
+          fixed_status=$?
+          set -e
+          cat buggy.log
+          cat fixed.log
+          test "$buggy_status" -ne 0
+          grep -q "UnicodeEncodeError" buggy.log
+          test "$fixed_status" -eq 0
+
+  black:
+    name: Black bug 1 / Python 3.8.3
+    runs-on: ubuntu-latest
+    container: python:3.8.3-buster
+    steps:
+      - name: Check out Vajrastra
+        uses: actions/checkout@v4
+      - name: Check out buggy Black revision
+        uses: actions/checkout@v4
+        with:
+          repository: psf/black
+          ref: 26c9465a22c732ab1e17b0dec578fa3432e9b558
+          path: upstream/buggy
+      - name: Check out fixed Black revision
+        uses: actions/checkout@v4
+        with:
+          repository: psf/black
+          ref: c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7
+          path: upstream/fixed
+      - name: Verify revisions, overlay test, and install pinned dependencies
+        run: |
+          test "$(git -C upstream/buggy rev-parse HEAD)" = "26c9465a22c732ab1e17b0dec578fa3432e9b558"
+          test "$(git -C upstream/fixed rev-parse HEAD)" = "c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7"
+          cp upstream/fixed/tests/test_black.py upstream/buggy/tests/test_black.py
+          touch upstream/buggy/tests/__init__.py upstream/fixed/tests/__init__.py
+          python -m pip install --upgrade "pip<24.1"
+          python -m pip install "click==7.1.1" "attrs==19.3.0" "appdirs==1.4.3" "toml==0.10.0" "typed-ast==1.4.0" "regex==2020.2.20" "pathspec==0.7.0" "typing-extensions==3.7.4.1" "mypy-extensions==0.4.3" "setuptools-scm==3.5.0" "aiohttp==3.6.2" "aiohttp-cors==0.7.0"
+          (cd upstream/buggy && python setup.py egg_info)
+          (cd upstream/fixed && python setup.py egg_info)
+      - name: Require the expected assertion failure on buggy and pass on fixed
+        run: |
+          set +e
+          (cd upstream/buggy && python -m unittest -q tests.test_black.BlackTestCase.test_works_in_mono_process_only_environment) > buggy.log 2>&1
+          buggy_status=$?
+          (cd upstream/fixed && python -m unittest -q tests.test_black.BlackTestCase.test_works_in_mono_process_only_environment) > fixed.log 2>&1
+          fixed_status=$?
+          set -e
+          cat buggy.log
+          cat fixed.log
+          test "$buggy_status" -ne 0
+          grep -q "AssertionError: 1 != 0" buggy.log
+          test "$fixed_status" -eq 0

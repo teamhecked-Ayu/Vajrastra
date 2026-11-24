@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "dataset": {
+    "name": "BugsInPy",
+    "repository": "https://github.com/reproducing-research-projects/BugsInPy",
+    "commit": "316b95e2353ecda832bad9b42f86fa7c2fcec8ac"
+  },
+  "cases": [
+    {
+      "id": "pysnooper-1",
+      "project_repository": "https://github.com/cool-RR/PySnooper",
+      "buggy_commit": "e21a31162f4c54be693d8ca8260e42393b39abd3",
+      "fixed_commit": "56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2",
+      "python_version": "2.7.18",
+      "test_command": ["pytest", "-q", "-s", "tests/test_chinese.py::test_chinese"],
+      "test_overlays_from_fixed": ["tests/test_chinese.py", "tests/utils.py"],
+      "test_dependencies": ["pytest==4.6.11", "python_toolbox==0.9.3"],
+      "buggy_failure_pattern": "UnicodeEncodeError",
+      "changed_files": ["pysnooper/pycompat.py", "pysnooper/tracer.py", "tests/utils.py"],
+      "dataset_metadata": "projects/PySnooper/bugs/1/bug.info",
+      "upstream_patch": "projects/PySnooper/bugs/1/bug_patch.txt",
+      "note": "The dataset's Python 3.8.1 setting does not reproduce this Python 2 compatibility fix; the reproduction uses Python 2.7.18."
+    },
+    {
+      "id": "black-1",
+      "project_repository": "https://github.com/psf/black",
+      "buggy_commit": "26c9465a22c732ab1e17b0dec578fa3432e9b558",
+      "fixed_commit": "c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7",
+      "python_version": "3.8.3",
+      "test_command": ["python", "-m", "unittest", "-q", "tests.test_black.BlackTestCase.test_works_in_mono_process_only_environment"],
+      "test_overlays_from_fixed": ["tests/test_black.py"],
+      "test_dependencies": ["click==7.1.1", "attrs==19.3.0", "appdirs==1.4.3", "toml==0.10.0", "typed-ast==1.4.0", "regex==2020.2.20", "pathspec==0.7.0", "typing-extensions==3.7.4.1", "mypy-extensions==0.4.3", "setuptools-scm==3.5.0", "aiohttp==3.6.2", "aiohttp-cors==0.7.0"],
+      "buggy_failure_pattern": "AssertionError: 1 != 0",
+      "changed_files": ["black.py", "tests/test_black.py"],
+      "dataset_metadata": "projects/black/bugs/1/bug.info",
+      "upstream_patch": "projects/black/bugs/1/bug_patch.txt"
+    }
+  ]
+}
