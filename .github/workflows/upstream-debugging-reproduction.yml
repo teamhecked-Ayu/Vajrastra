@@ -1,0 +1,79 @@
+name: upstream-debugging-reproduction
+
+on:
+  push:
+    branches: ["feat/phase-3-debugging-code-generation"]
+    paths:
+      - "benchmarks/debugging/**"
+      - "tests/test_upstream_benchmark_manifest.py"
+      - ".github/workflows/upstream-debugging-reproduction.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "benchmarks/debugging/**"
+      - "tests/test_upstream_benchmark_manifest.py"
+      - ".github/workflows/upstream-debugging-reproduction.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case_id: pysnooper-1
+            repository: cool-RR/PySnooper
+            buggy_commit: e21a31162f4c54be693d8ca8260e42393b39abd3
+            fixed_commit: 56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2
+            python-version: "3.8.1"
+          - case_id: black-1
+            repository: psf/black
+            buggy_commit: 26c9465a22c732ab1e17b0dec578fa3432e9b558
+            fixed_commit: c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7
+            python-version: "3.8.3"
+    steps:
+      - name: Check out Vajrastra
+        uses: actions/checkout@v4
+      - name: Check out buggy upstream revision
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.buggy_commit }}
+          path: upstream/buggy
+      - name: Check out fixed upstream revision
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.fixed_commit }}
+          path: upstream/fixed
+      - name: Set up exact Python patch version
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install PySnooper test dependencies
+        if: matrix.case_id == 'pysnooper-1'
+        run: python -m pip install "pip<25" "setuptools<75" wheel "pytest<8" python-toolbox
+      - name: Install Black test dependencies
+        if: matrix.case_id == 'black-1'
+        run: |
+          python -m pip install "pip<25" "setuptools<75" wheel
+          python -m pip install "click==7.1.2" "attrs==19.3.0" "appdirs==1.4.4" "toml==0.10.1" "typed-ast==1.4.1" "regex==2020.5.14" "pathspec==0.8.0" "typing_extensions==3.7.4.3" "mypy_extensions==0.4.3" "setuptools_scm==4.1.2"
+      - name: Run pinned buggy-fails and fixed-passes reproduction
+        run: |
+          set -o pipefail
+          python benchmarks/debugging/run_upstream_benchmark.py \
+            --case "${{ matrix.case_id }}" \
+            --checkout "${{ matrix.case_id }}:buggy=$GITHUB_WORKSPACE/upstream/buggy" \
+            --checkout "${{ matrix.case_id }}:fixed=$GITHUB_WORKSPACE/upstream/fixed" \
+            --python "${{ matrix.case_id }}=$(command -v python)" \
+            | tee "upstream-${{ matrix.case_id }}.json"
+      - name: Upload upstream reproduction report
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-reproduction-${{ matrix.case_id }}
+          path: upstream-${{ matrix.case_id }}.json
