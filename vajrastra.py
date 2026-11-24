@@ -901,7 +901,7 @@ def cmd_github(ctx: AppContext, args: argparse.Namespace, out=None) -> int:
         verification = workflow.verify_branch(
             plan,
             commit,
-            workflow=getattr(args, "workflow", "github-task-verify.yml"),
+            workflow=getattr(args, "workflow", "watchdog.yml"),
             timeout_seconds=float(getattr(args, "timeout", 900.0)),
             poll_interval=float(getattr(args, "poll_interval", 15.0)),
         )
@@ -1096,7 +1096,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--message", default="feat: approved GitHub repository task")
     apply.add_argument("--title", required=True)
     apply.add_argument("--body", default="")
-    apply.add_argument("--workflow", default="github-task-verify.yml")
+    apply.add_argument("--workflow", default="watchdog.yml")
     apply.add_argument("--timeout", type=float, default=900.0)
     apply.add_argument("--poll-interval", type=float, default=15.0)
     return parser
