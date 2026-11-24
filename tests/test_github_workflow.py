@@ -104,10 +104,10 @@ class FakeGitHubClient:
             return {
                 "workflow_runs": [{
                     "id": 77,
-                    "path": ".github/workflows/github-task-verify.yml@refs/heads/" + work_branch,
+                    "path": ".github/workflows/watchdog.yml@refs/heads/" + work_branch,
                     "head_sha": self.work_commit,
                     "head_branch": work_branch,
-                    "event": "workflow_dispatch",
+                    "event": "push",
                     "status": "completed",
                     "conclusion": self.conclusion,
                     "html_url": "https://github.com/owner/test-repo/actions/runs/77",
@@ -285,7 +285,7 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIsNone(client.pull_payload)
         self.assertEqual(client.branches["main"], "base-sha")
 
-    def test_only_fixed_verification_workflow_can_be_dispatched(self):
+    def test_only_fixed_watchdog_verification_workflow_is_allowed(self):
         client, engine, _ = self.workflow()
         _, plan = self.plan(engine, client)
         changeset = engine.prepare_changes(plan, {"src/service.py": "VALUE = 6\n"})
