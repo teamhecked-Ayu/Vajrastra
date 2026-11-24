@@ -5,12 +5,12 @@
 
 ## Deterministic fixture benchmark
 
-Workflow: [debugging-benchmark, run 45356055281](https://github.com/teamhecked-Ayu/Vajrastra/actions/runs/45356055281)
+Workflow: [debugging-benchmark, run 45356447687](https://github.com/teamhecked-Ayu/Vajrastra/actions/runs/45356055281)
 
 | Python | Detection | Baseline reproduction | Corrected test pass | Runtime |
 |---|---:|---:|---:|---:|
-| 3.10 | 3/3 (100%) | 3/3 (100%) | 3/3 (100%) | 0.2344 s |
-| 3.12 | 3/3 (100%) | 3/3 (100%) | 3/3 (100%) | 0.3271 s |
+| 3.10 | 3/3 (100%) | 3/3 (100%) | 3/3 (100%) | 0.247 s |
+| 3.12 | 3/3 (100%) | 3/3 (100%) | 3/3 (100%) | 0.4688 s |
 
 The three fixtures cover division by literal zero, mutable default argument
 state leakage, and swallowed exceptions. Each defect was detected, each
@@ -27,7 +27,7 @@ disposable verification process.
 
 ## Real upstream reproductions
 
-Workflow: [upstream-debugging-reproduction, run 45356055224](https://github.com/teamhecked-Ayu/Vajrastra/actions/runs/45356055224)
+Workflow: [upstream-debugging-reproduction, run 45356447677](https://github.com/teamhecked-Ayu/Vajrastra/actions/runs/45356055224)
 
 | Case | Python | Buggy revision | Fixed revision | Result |
 |---|---|---|---|---|
@@ -41,7 +41,7 @@ the buggy checkout because those tests are not present in the buggy revision.
 
 ## Watchdog
 
-Workflow: [watchdog, run 45356055251](https://github.com/teamhecked-Ayu/Vajrastra/actions/runs/45356055251)
+Workflow: [watchdog, run 45356447679](https://github.com/teamhecked-Ayu/Vajrastra/actions/runs/45356055251)
 
 Python 3.10 and 3.12 both passed the compile, sealed-core integrity, unit test,
 and CLI smoke checks on the same verified branch head.
