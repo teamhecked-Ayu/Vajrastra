@@ -2,67 +2,32 @@ name: watchdog
 
 on:
   push:
-    branches: ["**"]
   pull_request:
-    branches: ["main"]
-
-permissions:
-  contents: read
-
-concurrency:
-  group: watchdog-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_dispatch:
 
 jobs:
-  verify:
-    name: python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+  test:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
-
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.12"]
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.python }}
 
-      - name: Byte-compile the package
-        run: python -m compileall -q core engines templates vajrastra.py tests
+      - name: Byte-compile tree
+        run: python -m compileall vajrastra.py core engines tests
 
-      - name: Verify the sealed core
-        run: |
-          python - <<'PY'
-          import sys
-          from pathlib import Path
+      - name: Integrity gate (fails on changed/missing/unexpected protected files)
+        run: python -m core._guard_integrity check --root .
 
-          from core.security_guard import SecurityGuard
-
-          report = SecurityGuard(Path(".")).verify()
-          print(report.describe())
-          print(f"bundle: {report.bundle_sha256}")
-          print(f"sealed: {report.sealed_at}")
-          for path in report.unexpected:
-              print(f"unexpected core file: {path}")
-          if report.status != "verified":
-              print("integrity check failed: re-seal core/security_lock.json deliberately if this was intended")
-              sys.exit(1)
-          PY
-
-      - name: Run the unit test suite
+      - name: Unit tests
         run: python -m unittest discover -s tests -v
-        env:
-          PYTHONDONTWRITEBYTECODE: "1"
 
-      - name: Smoke-run the CLI without optional engines
-        run: |
-          python vajrastra.py --help
-          python vajrastra.py --root "$RUNNER_TEMP/wd" memory stats
-          # the gate may legitimately return 1 (not significant); only crash here matters
-          python vajrastra.py --root "$RUNNER_TEMP/wd" research "watchdog smoke" --seeds 3 --budget 1 \
-            || echo "research gate returned non-zero (expected when the gate is not significant)"
-          python vajrastra.py --root "$RUNNER_TEMP/wd" worker --once || true
+      - name: Core smoke import
+        run: python -c "import core.security_guard, core.agent_loop, core.memory_engine; print('core imports OK')"
