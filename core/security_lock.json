@@ -1,6 +1,6 @@
 {
   "algorithm": "sha256",
-  "bundle_sha256": "623881de1a673eb6689abf0ad015a1b02a80d876b2bec65c72b546cfa45ee884",
+  "bundle_sha256": "b20d522543a80274a1c141d0a85939b8ea49ccc03d29602a5ff5b0019616ca63",
   "files": {
     "core/__init__.py": "bf3e5be14b6dcdeb7873e608ef73b0e937a91d23fa42d0cd10b896dd15325b45",
     "core/_guard_integrity.py": "15b85a549646c379907455646b324ccd5b4360d890a768e3f5c900680cbba2f6",
@@ -12,7 +12,7 @@
     "core/os_adapter.py": "cb4e1a0b3bedfb95a3924ed39e4370e8375bbd6202b20f292e03ba2a5403ccae",
     "core/security_guard.py": "315cc22a9a251348a710122188bcc733332d2636622cbb4b2b451d98d714cb74",
     "core/session_manager.py": "bf279aa9816650dc74bf4946b3de3122640a82c261150a3cebd898c733695663",
-    "vajrastra.py": "4018737a1382c54a7d4e5826f86ac98fe42652c26a37b4f1a294067d082f7821"
+    "vajrastra.py": "3c45c98c9c3ae3fa3f7795ffb706f71b4a732d3a275c47758ee87cf78f68b075"
   },
   "generated_by": "core.security_guard",
   "immutable": [
