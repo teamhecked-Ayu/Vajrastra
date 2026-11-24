@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -34,42 +35,45 @@ def _safe_relative_path(raw_path: str) -> Path:
     relative = Path(raw_path)
     if relative.is_absolute() or not relative.parts or any(part in {".", ".."} for part in relative.parts):
         raise ValueError(f"unsafe overlay path: {raw_path}")
+    if relative.parts[0] != "tests":
+        raise ValueError(f"test overlay must stay under tests/: {raw_path}")
     return relative
 
 
 def apply_test_overlay(case: dict, buggy: Path, fixed: Path) -> str:
-    """Copy a regression test absent from the buggy revision, without following symlinks."""
-    raw_path = case.get("test_overlay_from_fixed")
-    if not raw_path:
+    """Copy declared test-only files from fixed into buggy, without following symlinks."""
+    raw_paths = case.get("test_overlays_from_fixed", case.get("test_overlay_from_fixed"))
+    if not raw_paths:
         return "not-required"
-    relative = _safe_relative_path(raw_path)
-    source = fixed / relative
-    target = buggy / relative
+    if isinstance(raw_paths, str):
+        raw_paths = [raw_paths]
+    if not isinstance(raw_paths, list) or not all(isinstance(item, str) for item in raw_paths):
+        raise ValueError("test overlays must be a path or a list of paths")
 
-    current = fixed
-    for part in relative.parts:
-        current = current / part
-        if current.is_symlink():
-            raise RuntimeError(f"symlink in fixed test overlay path: {current}")
-    current = buggy
-    for part in relative.parts[:-1]:
-        current = current / part
-        if current.is_symlink():
-            raise RuntimeError(f"symlink in buggy test overlay path: {current}")
+    for raw_path in raw_paths:
+        relative = _safe_relative_path(raw_path)
+        source = fixed / relative
+        target = buggy / relative
 
-    if not source.is_file():
-        raise RuntimeError(f"fixed revision is missing regression test: {source}")
-    if target.exists():
-        if target.is_symlink() or not target.is_file():
+        current = fixed
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                raise RuntimeError(f"symlink in fixed test overlay path: {current}")
+        current = buggy
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                raise RuntimeError(f"symlink in buggy test overlay path: {current}")
+
+        if not source.is_file():
+            raise RuntimeError(f"fixed revision is missing regression test: {source}")
+        if target.exists() and not target.is_file():
             raise RuntimeError(f"unsafe existing regression test target: {target}")
-        if target.read_bytes() != source.read_bytes():
-            raise RuntimeError(f"buggy revision already has a different regression test: {target}")
-        return "already-present"
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.parent.resolve() != (buggy / relative.parent).resolve():
-        raise RuntimeError("regression test target escaped buggy checkout")
-    shutil.copyfile(str(source), str(target))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.parent.resolve() != (buggy / relative.parent).resolve():
+            raise RuntimeError("regression test target escaped buggy checkout")
+        shutil.copyfile(str(source), str(target))
     return "copied-from-fixed-revision"
 
 
@@ -184,15 +188,28 @@ def main() -> int:
                 command, cwd=str(paths[revision]), capture_output=True, text=True,
                 timeout=180, stdin=subprocess.DEVNULL, check=False,
             )
+            output = ((run.stdout or "") + (run.stderr or ""))[-5000:]
             passed = run.returncode == 0
             expected_pass = revision == "fixed"
-            correct = passed == expected_pass
+            failure_pattern = case.get("buggy_failure_pattern")
+            failure_is_expected = (
+                revision != "buggy"
+                or not failure_pattern
+                or re.search(failure_pattern, output, re.IGNORECASE) is not None
+            )
+            correct = (passed == expected_pass) and failure_is_expected
             failed = failed or not correct
             case_result[revision] = {
-                "status": "expected-pass" if correct else "unexpected-result",
+                "status": (
+                    "expected-pass" if correct and passed
+                    else "expected-regression-failure" if correct
+                    else "unexpected-failure-mode" if not passed and not failure_is_expected
+                    else "unexpected-result"
+                ),
                 "test_passed": passed,
                 "returncode": run.returncode,
-                "output": ((run.stdout or "") + (run.stderr or ""))[-3000:],
+                "expected_buggy_failure_pattern": failure_pattern if revision == "buggy" else None,
+                "output": output,
             }
         results.append(case_result)
 

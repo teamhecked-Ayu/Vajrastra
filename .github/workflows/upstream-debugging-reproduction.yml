@@ -19,61 +19,84 @@ permissions:
   contents: read
 
 jobs:
-  reproduce:
+  pysnooper:
+    name: PySnooper bug 1 / Python 2.7.18
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - case_id: pysnooper-1
-            repository: cool-RR/PySnooper
-            buggy_commit: e21a31162f4c54be693d8ca8260e42393b39abd3
-            fixed_commit: 56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2
-            python-version: "3.8.1"
-          - case_id: black-1
-            repository: psf/black
-            buggy_commit: 26c9465a22c732ab1e17b0dec578fa3432e9b558
-            fixed_commit: c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7
-            python-version: "3.8.3"
+    container: python:2.7.18-buster
     steps:
       - name: Check out Vajrastra
         uses: actions/checkout@v4
-      - name: Check out buggy upstream revision
+      - name: Check out buggy PySnooper revision
         uses: actions/checkout@v4
         with:
-          repository: ${{ matrix.repository }}
-          ref: ${{ matrix.buggy_commit }}
+          repository: cool-RR/PySnooper
+          ref: e21a31162f4c54be693d8ca8260e42393b39abd3
           path: upstream/buggy
-      - name: Check out fixed upstream revision
+      - name: Check out fixed PySnooper revision
         uses: actions/checkout@v4
         with:
-          repository: ${{ matrix.repository }}
-          ref: ${{ matrix.fixed_commit }}
+          repository: cool-RR/PySnooper
+          ref: 56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2
           path: upstream/fixed
-      - name: Set up exact Python patch version
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install PySnooper test dependencies
-        if: matrix.case_id == 'pysnooper-1'
-        run: python -m pip install "pip<25" "setuptools<75" wheel "pytest<8" python-toolbox
-      - name: Install Black test dependencies
-        if: matrix.case_id == 'black-1'
+      - name: Verify revisions, overlay tests, and install dependencies
         run: |
-          python -m pip install "pip<25" "setuptools<75" wheel
-          python -m pip install "click==7.1.2" "attrs==19.3.0" "appdirs==1.4.4" "toml==0.10.1" "typed-ast==1.4.1" "regex==2020.5.14" "pathspec==0.8.0" "typing_extensions==3.7.4.3" "mypy_extensions==0.4.3" "setuptools_scm==4.1.2"
-      - name: Run pinned buggy-fails and fixed-passes reproduction
+          test "$(git -C upstream/buggy rev-parse HEAD)" = "e21a31162f4c54be693d8ca8260e42393b39abd3"
+          test "$(git -C upstream/fixed rev-parse HEAD)" = "56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2"
+          cp upstream/fixed/tests/test_chinese.py upstream/buggy/tests/test_chinese.py
+          cp upstream/fixed/tests/utils.py upstream/buggy/tests/utils.py
+          python -m pip install --upgrade "pip<21" "setuptools<45" "wheel<0.38"
+          python -m pip install "pytest==4.6.11" python_toolbox
+      - name: Require UnicodeDecodeError on buggy and pass on fixed
         run: |
-          set -o pipefail
-          python benchmarks/debugging/run_upstream_benchmark.py \
-            --case "${{ matrix.case_id }}" \
-            --checkout "${{ matrix.case_id }}:buggy=$GITHUB_WORKSPACE/upstream/buggy" \
-            --checkout "${{ matrix.case_id }}:fixed=$GITHUB_WORKSPACE/upstream/fixed" \
-            --python "${{ matrix.case_id }}=$(command -v python)" \
-            | tee "upstream-${{ matrix.case_id }}.json"
-      - name: Upload upstream reproduction report
-        uses: actions/upload-artifact@v4
+          set +e
+          (cd upstream/buggy && python -m pytest -q -s tests/test_chinese.py::test_chinese) > buggy.log 2>&1
+          buggy_status=$?
+          (cd upstream/fixed && python -m pytest -q -s tests/test_chinese.py::test_chinese) > fixed.log 2>&1
+          fixed_status=$?
+          set -e
+          cat buggy.log
+          cat fixed.log
+          test "$buggy_status" -ne 0
+          grep -q "UnicodeDecodeError" buggy.log
+          test "$fixed_status" -eq 0
+
+  black:
+    name: Black bug 1 / Python 3.8.3
+    runs-on: ubuntu-latest
+    container: python:3.8.3-buster
+    steps:
+      - name: Check out Vajrastra
+        uses: actions/checkout@v4
+      - name: Check out buggy Black revision
+        uses: actions/checkout@v4
         with:
-          name: upstream-reproduction-${{ matrix.case_id }}
-          path: upstream-${{ matrix.case_id }}.json
+          repository: psf/black
+          ref: 26c9465a22c732ab1e17b0dec578fa3432e9b558
+          path: upstream/buggy
+      - name: Check out fixed Black revision
+        uses: actions/checkout@v4
+        with:
+          repository: psf/black
+          ref: c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7
+          path: upstream/fixed
+      - name: Verify revisions, overlay test, and install dependencies
+        run: |
+          test "$(git -C upstream/buggy rev-parse HEAD)" = "26c9465a22c732ab1e17b0dec578fa3432e9b558"
+          test "$(git -C upstream/fixed rev-parse HEAD)" = "c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7"
+          cp upstream/fixed/tests/test_black.py upstream/buggy/tests/test_black.py
+          touch upstream/buggy/tests/__init__.py upstream/fixed/tests/__init__.py
+          python -m pip install --upgrade "pip<24.1"
+          python -m pip install "click==7.1.1" "attrs==19.3.0" "appdirs==1.4.3" "toml==0.10.0" "typed-ast==1.4.0" "regex==2020.2.20" "pathspec==0.7.0" "typing-extensions==3.7.4.1" "mypy-extensions==0.4.3" "setuptools-scm==3.5.0" "aiohttp==3.6.2" "aiohttp-cors==0.7.0"
+      - name: Require OSError on buggy and pass on fixed
+        run: |
+          set +e
+          (cd upstream/buggy && python -m unittest -q tests.test_black.BlackTestCase.test_works_in_mono_process_only_environment) > buggy.log 2>&1
+          buggy_status=$?
+          (cd upstream/fixed && python -m unittest -q tests.test_black.BlackTestCase.test_works_in_mono_process_only_environment) > fixed.log 2>&1
+          fixed_status=$?
+          set -e
+          cat buggy.log
+          cat fixed.log
+          test "$buggy_status" -ne 0
+          grep -q "OSError" buggy.log
+          test "$fixed_status" -eq 0

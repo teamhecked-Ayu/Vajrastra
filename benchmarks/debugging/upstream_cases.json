@@ -11,12 +11,14 @@
       "project_repository": "https://github.com/cool-RR/PySnooper",
       "buggy_commit": "e21a31162f4c54be693d8ca8260e42393b39abd3",
       "fixed_commit": "56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2",
-      "python_version": "3.8.1",
+      "python_version": "2.7.18",
       "test_command": ["pytest", "-q", "-s", "tests/test_chinese.py::test_chinese"],
-      "test_overlay_from_fixed": "tests/test_chinese.py",
+      "test_overlays_from_fixed": ["tests/test_chinese.py", "tests/utils.py"],
+      "buggy_failure_pattern": "UnicodeDecodeError",
       "changed_files": ["pysnooper/pycompat.py", "pysnooper/tracer.py", "tests/utils.py"],
       "dataset_metadata": "projects/PySnooper/bugs/1/bug.info",
-      "upstream_patch": "projects/PySnooper/bugs/1/bug_patch.txt"
+      "upstream_patch": "projects/PySnooper/bugs/1/bug_patch.txt",
+      "note": "The dataset's Python 3.8.1 setting does not reproduce this Python 2 compatibility fix; the reproduction uses Python 2.7.18."
     },
     {
       "id": "black-1",
@@ -25,7 +27,9 @@
       "fixed_commit": "c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7",
       "python_version": "3.8.3",
       "test_command": ["python", "-m", "unittest", "-q", "tests.test_black.BlackTestCase.test_works_in_mono_process_only_environment"],
-      "changed_files": ["black.py"],
+      "test_overlays_from_fixed": ["tests/test_black.py"],
+      "buggy_failure_pattern": "OSError",
+      "changed_files": ["black.py", "tests/test_black.py"],
       "dataset_metadata": "projects/black/bugs/1/bug.info",
       "upstream_patch": "projects/black/bugs/1/bug_patch.txt"
     }
