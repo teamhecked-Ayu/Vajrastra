@@ -38,14 +38,14 @@ jobs:
           repository: cool-RR/PySnooper
           ref: 56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2
           path: upstream/fixed
-      - name: Verify revisions, overlay tests, and install dependencies
+      - name: Verify revisions, overlay tests, and install pinned dependencies
         run: |
           test "$(git -C upstream/buggy rev-parse HEAD)" = "e21a31162f4c54be693d8ca8260e42393b39abd3"
           test "$(git -C upstream/fixed rev-parse HEAD)" = "56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2"
           cp upstream/fixed/tests/test_chinese.py upstream/buggy/tests/test_chinese.py
           cp upstream/fixed/tests/utils.py upstream/buggy/tests/utils.py
           python -m pip install --upgrade "pip<21" "setuptools<45" "wheel<0.38"
-          python -m pip install "pytest==4.6.11" python_toolbox
+          python -m pip install "pytest==4.6.11" "python_toolbox==1.0.11"
       - name: Require UnicodeDecodeError on buggy and pass on fixed
         run: |
           set +e
@@ -79,7 +79,7 @@ jobs:
           repository: psf/black
           ref: c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7
           path: upstream/fixed
-      - name: Verify revisions, overlay test, and install dependencies
+      - name: Verify revisions, overlay test, and install pinned dependencies
         run: |
           test "$(git -C upstream/buggy rev-parse HEAD)" = "26c9465a22c732ab1e17b0dec578fa3432e9b558"
           test "$(git -C upstream/fixed rev-parse HEAD)" = "c0a7582e3d4cc8bec3b7f5a6c52b36880dcb57d7"
@@ -87,6 +87,8 @@ jobs:
           touch upstream/buggy/tests/__init__.py upstream/fixed/tests/__init__.py
           python -m pip install --upgrade "pip<24.1"
           python -m pip install "click==7.1.1" "attrs==19.3.0" "appdirs==1.4.3" "toml==0.10.0" "typed-ast==1.4.0" "regex==2020.2.20" "pathspec==0.7.0" "typing-extensions==3.7.4.1" "mypy-extensions==0.4.3" "setuptools-scm==3.5.0" "aiohttp==3.6.2" "aiohttp-cors==0.7.0"
+          (cd upstream/buggy && python setup.py egg_info)
+          (cd upstream/fixed && python setup.py egg_info)
       - name: Require OSError on buggy and pass on fixed
         run: |
           set +e
