@@ -13,6 +13,7 @@
       "fixed_commit": "56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2",
       "python_version": "3.8.1",
       "test_command": ["pytest", "-q", "-s", "tests/test_chinese.py::test_chinese"],
+      "test_overlay_from_fixed": "tests/test_chinese.py",
       "changed_files": ["pysnooper/pycompat.py", "pysnooper/tracer.py", "tests/utils.py"],
       "dataset_metadata": "projects/PySnooper/bugs/1/bug.info",
       "upstream_patch": "projects/PySnooper/bugs/1/bug_patch.txt"
