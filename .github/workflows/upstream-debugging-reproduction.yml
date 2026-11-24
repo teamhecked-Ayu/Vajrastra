@@ -45,7 +45,7 @@ jobs:
           cp upstream/fixed/tests/test_chinese.py upstream/buggy/tests/test_chinese.py
           cp upstream/fixed/tests/utils.py upstream/buggy/tests/utils.py
           python -m pip install --upgrade "pip<21" "setuptools<45" "wheel<0.38"
-          python -m pip install "pytest==4.6.11" "python_toolbox==1.0.0"
+          python -m pip install "pytest==4.6.11" "python_toolbox==0.9.3"
       - name: Require UnicodeDecodeError on buggy and pass on fixed
         run: |
           set +e
