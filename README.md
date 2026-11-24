@@ -21,7 +21,7 @@ python -m venv .venv
 Activate the virtual environment:
 
 - Linux/macOS: `. .venv/bin/activate`
-- Windows PowerShell: `.venv\\Scripts\\Activate.ps1`
+- Windows PowerShell: `.venv\Scripts\Activate.ps1`
 
 Install the project in editable mode:
 
