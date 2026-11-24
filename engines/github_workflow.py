@@ -133,7 +133,12 @@ class VerificationResult:
 
     @property
     def passed(self) -> bool:
-        return self.status == "completed" and self.conclusion == "success"
+        return (
+            self.status == "completed"
+            and self.conclusion == "success"
+            and bool(self.artifacts)
+            and bool(self.head_sha)
+        )
 
 
 @dataclass(frozen=True)
