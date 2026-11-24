@@ -1,7 +1,7 @@
 # Phase 3 debugging benchmark results
 
 **Measurement date:** 24 November 2026  
-**Verified branch head:** `6164fbecb6a5ebcfaa5cc3e2cd3b7d5546a081b2`
+**Verified branch head before this documentation correction:** `6164fbecb6a5ebcfaa5cc3e2cd3b7d5546a081b2`
 
 ## Deterministic fixture benchmark
 
@@ -31,8 +31,8 @@ Workflow: [upstream-debugging-reproduction, run 45356055224](https://github.com/
 
 | Case | Python | Buggy revision | Fixed revision | Result |
 |---|---|---|---|---|
-| PySnooper bug 1 | 2.7.18 | Focused test fails with `UnicodeEncodeError` | 1 focused test passes | <strong>Passed</strong> |
-| Black bug 1 | 3.8.3 | Focused test fails with `AssertionError: 1 != 0` | Focused test passes | <strong>Passed</strong> |
+| PySnooper bug 1 | 2.7.18 | Focused test fails with `UnicodeEncodeError` | 1 focused test passes | **Passed** |
+| Black bug 1 | 3.8.3 | Focused test fails with `AssertionError: 1 != 0` | Focused test passes | **Passed** |
 
 Both upstream jobs completed successfully. Each exact buggy commit failed
 with its declared regression signature, and each exact fixed commit passed.
@@ -48,7 +48,7 @@ and CLI smoke checks on the same verified branch head.
 
 ## Phase 3 exit gate
 
-<badge>Passed</badge>
+**Passed.**
 
 The required benchmark accuracy, corrected-test pass rate, runtime, and
 pinned real upstream bug/fix reproductions are published above. No universal
